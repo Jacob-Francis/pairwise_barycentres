@@ -1,1 +1,1 @@
-from data_processing import BarycentreDataProcessor
+from .data_processing import BarycentreDataProcessor

@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from tensorisation import Tensorisation
+from torchnumpyprocess import TorchNumpyProcessing
 
 
 """
@@ -10,11 +10,13 @@ If they each live on a different grid then I need to store them separately,
 Though if tensorsaion is possible I also need to io store all the different small memeory kerenals - which 
 may be many different grids...
 
-I'll focus on the non-graph case for now - though maybe desingin both at the same time ie better.
- 
+I'll focus on the non-graph case for now - though maybe desiging both at the same time ie better.
+
+ToDo: Generalise so that not all the data has the same type - i.e. is tuple and all points?
+
 """
-class BarycentreDataProcessor(Tensorisation):
-    def __init__(self, data_dict, graph, grid=None, set_fail=False, cuda_device=None, pykeops=True):
+class BarycentreDataProcessor(TorchNumpyProcessing):
+    def __init__(self, data_dict, graph, grid=None, set_fail=False, cuda_device=None, pykeops=True, free_grids=True):
         """Provide a python dictionary with keys being the index of the data and keys, density, grid.
         If given a grid assume they all share one grid. It will ignore any keys inside the dictionary
         for the same grid
@@ -26,8 +28,18 @@ class BarycentreDataProcessor(Tensorisation):
         Graph (this could be a graph definind a pair wise version no? though can you have separate edges)
         Parameters
         ----------
-        data : _type_
-            _description_
+        data_dict : dict
+            dictionary with keys being the index of the data and keys, density, grid.
+        graph : networkx graph
+            graph defining the connections between the data points.
+        grid : (N, 2), (n1, n2, 2), ((n1), (n2)), optional
+            If provided then we assume all data lives on the same grid, by default None
+        set_fail : bool, optional
+            see parent class, by default False
+        cuda_device : int, optional
+            see parent class, by default None
+        pykeops : bool, optional
+            If True then we assume PyKeOps is available and use it for tensorisation, by default True
         """
 
         # old import
@@ -38,6 +50,9 @@ class BarycentreDataProcessor(Tensorisation):
 
         # Run processing of the graph edges
         self.build_edges(grid=grid)
+        self._density_processing()
+        if free_grids:
+            self.free_grid_memory()
     
     def _process_grids(self, edge, grid1, grid2):
         """
@@ -54,7 +69,7 @@ class BarycentreDataProcessor(Tensorisation):
         """
 
         # Toggle
-        using_pykeops = False
+        self.data_dict[edge] = {}
 
         if isinstance(grid1, tuple) and isinstance(grid2, tuple):
             self.data_dict[edge]['x1y1'] = (
@@ -112,17 +127,11 @@ class BarycentreDataProcessor(Tensorisation):
             # Need to process for PyKeOps - otherwise can delete?
             self.data_dict[edge[0]]['grid'] = self._clone_process(grid1, non_blocking=True)
             self.data_dict[edge[1]]['grid'] = self._clone_process(grid2, non_blocking=True)
-            using_pykeops = True
         else:
             # I'm not sure I'll ever use this
             raise NotImplementedError("Creating the full dense kernel is not supported")
-
-        if not using_pykeops:
-            # Free up memory
-            del self.data_dict[edge[0]]['grid']
-            del self.data_dict[edge[1]]['grid']
     
-    def density_processing(self, edge, density1, density2):
+    def _edge_density_processing(self, edge, density1, density2):
         try:
             n1,n2 = self.data_dict[edge[0]]['grid'].shape
             m1,m2 = self.data_dict[edge[1]]['grid'].shape
@@ -131,10 +140,11 @@ class BarycentreDataProcessor(Tensorisation):
             
             # for the potentials we drop the two
             n2 = m2 = 1
-        except KeyError:
-            n1, m1 = self.data_dict[edge[0]]['x1y1'].shape
-            n2, m2 = self.data_dict[edge[0]]['x2y2'].shape
+        except (KeyError, AttributeError, ValueError):
+            n1, m1 = self.data_dict[edge]['x1y1'].shape
+            n2, m2 = self.data_dict[edge]['x2y2'].shape
         
+        # overwrite with correct verison
         self.data_dict[edge[0]]['density'] = self._process_inputs(density1, n1, n2)
         self.data_dict[edge[1]]['density'] = self._process_inputs(density2, m1, m2)
     
@@ -150,31 +160,69 @@ class BarycentreDataProcessor(Tensorisation):
 
         return weights
 
+    def _density_processing(self):
+        # go around all edges of the graph and check if i can tensorise
+
+        for edge in self.graph.edges:
+            density_i = self.data_dict[edge[0]]['density']
+            density_j = self.data_dict[edge[1]]['density']
+            self._edge_density_processing(edge, density_i, density_j)
+
     def build_edges(self, grid=None):
         # go around all edges of the graph and check if i can tensorise
 
-        if grid is None:
+        if grid is None: # generate per edge
             for edge in self.graph.edges:
+                
                 grid_i = self.data_dict[edge[0]]['grid']
                 grid_j = self.data_dict[edge[1]]['grid']
                 self._process_grids(edge, grid_i, grid_j)
-        else:
+        else: # They're sharing the grid
             edge_list = list(self.graph.edges)
             edge0 = edge_list.pop()
-            self._process_grids(edge, grid, grid)
-
-            x1y1 = self.data_dict[edge0]['x1y1']
-            x2y2 = self.data_dict[edge0]['x2y2']
+            self._process_grids(edge0, grid, grid)
 
             # Point to the same grid for all data
-            if len(grid.shape)==3 or isinstance(grid, tuple):
+            if isinstance(grid, tuple) or len(grid.shape)==3:
+                x1y1 = self.data_dict[edge0]['x1y1']
+                x2y2 = self.data_dict[edge0]['x2y2']
+
                 for edge in edge_list:
+                    self.data_dict[edge]={}
                     self.data_dict[edge]['x1y1'] = x1y1 
                     self.data_dict[edge]['x2y2'] = x2y2
 
-            # check pointing to the same object for efficient memory use
-            for e in edge_list:
-                assert self.data_dict[e]['x1y1'] is x1y1
-                assert self.data_dict[e]['x2y2'] is x2y2
+                # check pointing to the same object for efficient memory use
+                for e in list(self.graph.edges):
+                    assert self.data_dict[e]['x1y1'] is x1y1
+                    assert self.data_dict[e]['x2y2'] is x2y2
+            elif self.pykeops == True:
+                # Point to one grid
+                shared_grid = self.data_dict[edge0[0]]['grid']
+                for edge in list(self.graph.edges):
+                    self.data_dict[edge] = {}
+                    self.data_dict[edge[0]]['grid'] = shared_grid
+                    self.data_dict[edge[1]]['grid'] = shared_grid
 
-          
+                # check pointing to the same object for efficient memory use
+                for e in list(self.graph.edges):
+                    assert self.data_dict[e[0]]['grid'] is shared_grid
+                    assert self.data_dict[e[1]]['grid'] is shared_grid
+
+    def free_grid_memory(self):
+        # bool switch to delete otherwise we need to keep the grid -
+        # We have actually assumed that each piece of data assumes the same grid struture.
+        for k in self.graph.nodes():
+            del_graph = True
+            # print(self.data_dict.keys())
+            for n in self.graph.neighbors(k):
+                # We use an undirected graph and so only need to check one way
+                if 'x1y1' in self.data_dict[(k,n) if k<n else (n,k)]:
+                    continue
+                else:
+                    # There is an edge without tensorsiation - so we need to keep the grid
+                    del_graph = False
+            
+            if del_graph:
+                del self.data_dict[k]['grid']
+       
