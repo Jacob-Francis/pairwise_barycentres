@@ -9,3 +9,5 @@ ToDo: Allow different type of grid input. ATM all grid have to be the same type;
 (N, 2) (n1, n2, 2) or ((n1), (n2)).
 
 ToDo: If only one density given then assume debiaing version
+
+ToDo: Convergence of test_asym_bary_with_same_grid_uniform_density_with_debiasing is very sensitive and I'm not sure why. The debaising may improve the barycentre but I'm not aware of results on convergence.

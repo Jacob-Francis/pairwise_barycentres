@@ -1,1 +1,4 @@
-from .data_processing import BarycentreDataProcessor
+from .data_processing import BarycentreDataProcessor, SinkhornDataProcessor
+from .asymmetric_sinkhorn_algorithm import asymmetric_sinkhorn_algorithm
+from .utils import generate_barycentredataprocessor
+from .pykeops_formulas import *

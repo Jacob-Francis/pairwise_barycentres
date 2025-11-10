@@ -242,7 +242,27 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
                 )
                 ** 2
             )
+    def _cost_for_tuple(self, grid1, grid2):
+        return (
+                0.5
+                * torch.cdist(
+                    self._clone_process(grid1[0], non_blocking=True).view(-1, 1),
+                    self._clone_process(grid2[0], non_blocking=True).view(-1, 1),
+                )
+                ** 2,
+                0.5
+                * torch.cdist(
+                    self._clone_process(grid1[1], non_blocking=True).view(-1, 1),
+                    self._clone_process(grid2[1], non_blocking=True).view(-1, 1),
+                )
+                ** 2
+            )
 
+# ------------------------------------------------------------------------
+# ------------------------------------------------------------------------
+#  Sinkhorn Data Processor
+# ------------------------------------------------------------------------
+# ------------------------------------------------------------------------
 
 class SinkhornDataProcessor(BarycentreDataProcessor):
     def __init__(
@@ -272,7 +292,7 @@ class SinkhornDataProcessor(BarycentreDataProcessor):
     def _initial_dual_potentials_ab(self):
         # attach correct potential per node
         for node in self.graph.nodes:
-            self.data_dict[node]["a"] = torch.zeros_like(
+            self.data_dict[node]["a"] = torch.ones_like(
                 self.data_dict[node]["density"]
             )
 
@@ -282,20 +302,4 @@ class SinkhornDataProcessor(BarycentreDataProcessor):
         for node in self.graph.nodes:
             self.data_dict[node]["f"] = torch.zeros_like(
                 self.data_dict[node]["density"]
-            )
-
-    def _cost_for_tuple(self, grid1, grid2):
-        return (
-                0.5
-                * torch.cdist(
-                    self._clone_process(grid1[0], non_blocking=True).view(-1, 1),
-                    self._clone_process(grid2[0], non_blocking=True).view(-1, 1),
-                )
-                ** 2,
-                0.5
-                * torch.cdist(
-                    self._clone_process(grid1[1], non_blocking=True).view(-1, 1),
-                    self._clone_process(grid2[1], non_blocking=True).view(-1, 1),
-                )
-                ** 2
             )

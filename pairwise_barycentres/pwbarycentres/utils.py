@@ -1,5 +1,5 @@
 import torch
-from data_processing import BarycentreDataProcessor
+from .data_processing import BarycentreDataProcessor, SinkhornDataProcessor
 
 
 def kl_prox(s, epsilon, rho, p):
@@ -107,7 +107,7 @@ def generate_barycentredataprocessor(data, barycentre_grid, grid=None, weights=N
     counter = 0
     data_dict = {}
     for i in range(M):
-        edges.append((counter, counter+1), ())
+        edges.append((counter, counter+1))
         data_dict[counter] = {
             'density': None, # this is the bayrcentre which will have a uniform density to start
             'grid': barycentre_grid,
@@ -120,11 +120,19 @@ def generate_barycentredataprocessor(data, barycentre_grid, grid=None, weights=N
     graph = graph_creator_from_edges_and_weights(edges, weights)
 
     # build data processor
-    dp = BarycentreDataProcessor(
+
+    dp = SinkhornDataProcessor(
+        potentials='a',
         data_dict=data_dict,
         graph=graph,
-        free_grids=False
+        free_grids=False,
+        grid=grid
     )
+
+    # Put barycentres as the same grid data
+    shared_density = data_dict[0]['density']
+    for edge in dp.graph.edges:
+        dp.data_dict[edge[0]]['density'] = shared_density
 
     # clean memory
     # We can't clean all memory we can only clean the grids that are not used by the data
@@ -132,4 +140,6 @@ def generate_barycentredataprocessor(data, barycentre_grid, grid=None, weights=N
     for edge in dp.graph.edges:
         if 'x1y1' in dp.data_dict[edge[1]]:
             del dp.data_dict[edge[1]]['grid']
+    
+    return dp
         
