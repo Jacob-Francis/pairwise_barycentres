@@ -106,7 +106,10 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
             self.data_dict[edge]["x1y1"], self.data_dict[edge]["x2y2"] = self._cost_for_meshgrid(grid1, grid2, n1, n2, m1, m2)
             
             # Prioritise tensoration
-        elif self.pykeops == True:
+        elif self.pykeops == True and not (isinstance(grid1, tuple) and isinstance(grid2, tuple)):
+            
+            assert grid1.shape[1] == 2 and grid2.shape[1] == 2, "We assume 2D points"
+
             # Need to process for PyKeOps - otherwise can delete?
             self.data_dict[edge[0]]["grid"] = self._clone_process(
                 grid1, non_blocking=True

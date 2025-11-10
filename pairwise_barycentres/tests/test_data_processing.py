@@ -7,6 +7,49 @@ import networkx as nx
 
 torch.set_printoptions(precision=8)
 
+@pytest.mark.parametrize(
+    "n1, n2, L, grid_type",
+    [
+        (2, 2, 0.9, "flat"),
+        (5, 6, 3.5, "tensor"),
+    ],
+)  # noqa: E501
+def test_class_with_error_grid(n1, n2, L, grid_type):
+
+    if grid_type == "flat":
+        X = torch.cartesian_prod(
+            torch.linspace(0, L, n1), torch.linspace(0, L, n2)
+        ).type(torch.DoubleTensor)
+        X = X[:, 0].view(-1, 1)
+    elif grid_type == "tensor":
+        X = torch.stack(
+            torch.meshgrid(
+                torch.linspace(0, L, n1), torch.linspace(0, L, n2), indexing="ij"
+            ),
+            dim=-1,
+        ).type(torch.DoubleTensor) 
+        X = X[:, :, 0]
+  
+
+    data_dict = {}
+    edges = [(1, 2), (2, 3), (3, 4)]
+    G = nx.Graph()
+    G.add_edges_from(edges)
+
+    for k in G.nodes():
+        data_dict[k] = {}
+        data_dict[k]["grid"] = None
+        data_dict[k]["density"] = None
+
+    # Grid is flat and we're using pykeops so should just add a grid variable
+    with pytest.raises(AssertionError):
+        bcp = BarycentreDataProcessor(
+            graph=G,
+            data_dict=data_dict,
+            grid=X,
+            cuda_device="cpu",
+        )
+
 
 @pytest.mark.parametrize(
     "n1, n2, L, grid_type",
