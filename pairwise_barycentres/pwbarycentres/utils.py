@@ -94,7 +94,7 @@ def graph_creator_from_edges_and_weights(edges, weights=None):
 
 
 # 
-def generate_barycentredataprocessor(data, barycentre_grid, grid=None, weights=None):
+def generate_barycentredataprocessor(data, barycentre_grid, grid=None, weights=None, cuda_device=None):
     # Data should be arranged as a list of lists
     # i.e. data[i] = [density, grid]
     # the grid and density could be [None, None]
@@ -126,7 +126,8 @@ def generate_barycentredataprocessor(data, barycentre_grid, grid=None, weights=N
         data_dict=data_dict,
         graph=graph,
         free_grids=False,
-        grid=grid
+        grid=grid,
+        cuda_device=cuda_device,
     )
 
     # Put barycentres as the same grid data
