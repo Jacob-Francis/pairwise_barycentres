@@ -143,7 +143,7 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
         Processes densities or points or potentials, with default 'None' values as ones*constant. Or convert input to torch type
         """
         if points is None:
-            weights = const * torch.ones((n, m)).type(self.dtype) / (n * m)
+            weights = self._torch_numpy_process(const * torch.ones((n, m)).type(self.dtype) / (n * m))
         else:
             weights = self._clone_process(points, non_blocking=True)
             weights = weights.view(n, m)

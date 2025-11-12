@@ -1,4 +1,4 @@
 from .data_processing import BarycentreDataProcessor, SinkhornDataProcessor
-from .asymmetric_sinkhorn_algorithm import asymmetric_sinkhorn_algorithm
+from .asymmetric_sinkhorn_algorithm import asymmetric_sinkhorn_algorithm, asymmetric_cost, calculate_node_marginal
 from .utils import generate_barycentredataprocessor
 from .pykeops_formulas import *

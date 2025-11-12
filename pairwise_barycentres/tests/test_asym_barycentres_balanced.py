@@ -90,7 +90,7 @@ def test_asym_bary_with_same_grid_uniform_density_without_debiasing(n1, n2, memb
 
     # Since using a uniform density the barycentre should also be uniform
     # Because of entropic error the tolerance is looser here
-    assert np.allclose(barycentre, torch.ones_like(barycentre) / barycentre.numel(), atol=1e-2)
+    assert torch.allclose(barycentre, torch.ones_like(barycentre) / barycentre.numel(), atol=1e-2)
 
 @pytest.mark.parametrize(
     "n1, n2, members, L, grid_type",
@@ -170,7 +170,7 @@ def test_asym_bary_with_same_grid_uniform_density_with_debiasing(n1, n2, members
     
     # Since using a uniform density the barycentre should also be uniform
     # Because of debiasing we can make the tolerance tighter
-    assert np.allclose(barycentre, torch.ones_like(barycentre) / barycentre.numel(), atol=1e-2)
+    assert torch.allclose(barycentre, torch.ones_like(barycentre) / barycentre.numel(), atol=1e-2)
 
 # --------------------------------------------------------
 # Testing barycentre and other grids which are different
