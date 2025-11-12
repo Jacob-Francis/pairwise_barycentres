@@ -25,7 +25,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install "git+https://github.com/Jacob-Francis/UOTforSpatialVerification.git@main#egg=torch_numpy_process&subdirectory=torch_numpy_process"
-          pip install pwbarycentres
+          pip install ./pairwise_barycentres
           pip install pytest
       - name: Run Pytest
         run: |
