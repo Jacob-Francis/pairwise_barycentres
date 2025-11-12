@@ -295,14 +295,14 @@ class SinkhornDataProcessor(BarycentreDataProcessor):
     def _initial_dual_potentials_ab(self):
         # attach correct potential per node
         for node in self.graph.nodes:
-            self.data_dict[node]["a"] = torch.ones_like(
+            self.data_dict[node]["a"] = self._torch_numpy_process(torch.ones_like(
                 self.data_dict[node]["density"]
-            )
+            ))
 
     def _initial_dual_potentials_fg(self):
 
         # attach correct potential per node
         for node in self.graph.nodes:
-            self.data_dict[node]["f"] = torch.zeros_like(
+            self.data_dict[node]["f"] = self._torch_numpy_process(torch.zeros_like(
                 self.data_dict[node]["density"]
-            )
+            ))
