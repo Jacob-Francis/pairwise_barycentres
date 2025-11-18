@@ -31,4 +31,4 @@ jobs:
           pip install pytest
       - name: Run Pytest
         run: |
-          pytest pairwaise_barycentres/
+          pytest 
