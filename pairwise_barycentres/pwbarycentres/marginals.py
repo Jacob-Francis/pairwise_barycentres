@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from .data_processing import SinkhornDataProcessor
+from graph_dp import SinkhornDataProcessor
 from .pykeops_formulas import chizat_marginals
 from .utils import tensorise_f
 

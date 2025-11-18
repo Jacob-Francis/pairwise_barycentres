@@ -2,7 +2,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 import torch
 import pytest
-from pwbarycentres import BarycentreDataProcessor
+from graph_dp import BarycentreDataProcessor
 import networkx as nx
 
 torch.set_printoptions(precision=8)

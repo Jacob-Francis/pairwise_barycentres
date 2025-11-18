@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from .data_processing import SinkhornDataProcessor
+from graph_dp import SinkhornDataProcessor
 from .pykeops_formulas import chizat_marginals, chizat_reduction
 from .utils import chizat_proxdiv_step, tensorise_f, _dual_cost_data_term
 from .marginals import calculate_node_marginal, _tensorised_marginal_reduction, _flat_grid_marginal_reduction

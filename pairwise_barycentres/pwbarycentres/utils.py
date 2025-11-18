@@ -1,5 +1,5 @@
 import torch
-from .data_processing import BarycentreDataProcessor, SinkhornDataProcessor
+from graph_dp import SinkhornDataProcessor
 
 
 # ----------------------------------------------------------------------------------
