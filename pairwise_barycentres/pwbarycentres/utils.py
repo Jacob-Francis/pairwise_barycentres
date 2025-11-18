@@ -96,8 +96,10 @@ def tensorise_f(C1, C2, f):
 
     if N == C1.shape[0] and M == C2.shape[0]:
         ind = 0
-    else:
+    elif N == C1.shape[1] and M == C2.shape[1]:
         ind = 1
+    else:
+        raise ValueError("Dimensions of C1, C2, and f do not match for tensorised multiplication")
 
     return torch.tensordot(
         torch.tensordot(C1, f, dims=([ind], [0])), C2, dims=([1], [ind])
