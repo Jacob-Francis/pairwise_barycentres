@@ -3,6 +3,7 @@ import numpy as np
 from .data_processing import SinkhornDataProcessor
 from .pykeops_formulas import chizat_marginals, chizat_reduction
 from .utils import chizat_proxdiv_step, tensorise_f, _dual_cost_data_term
+from .marginals import calculate_node_marginal, _tensorised_marginal_reduction, _flat_grid_marginal_reduction
 
 def generate_epsilon_list(epsilon: float, max_iterates: int) -> list:
     epsilon_list = torch.logspace(
@@ -273,111 +274,17 @@ def process_dict_for_barycentre(dp: SinkhornDataProcessor, debiasing=True):
                     # Calculate cost matrices - the indexing works
                     # because torch cdist eliminats the common axis which will have the same values.
                     dp.data_dict[edge2[0]]["x1x1"], dp.data_dict[edge2[0]]["x2x2"] = dp._cost_for_meshgrid(grid, grid, n1, n2, n1, n2)
-                    
+                
+            # point all barycentres to the tensorisation
+            for edges in dp.graph.edges:
+                dp.data_dict[edges[0]]['x1x1'] = dp.data_dict[edge2[0]]['x1x1']
+                dp.data_dict[edges[0]]['x2x2'] = dp.data_dict[edge2[0]]['x2x2']
+
+                assert dp.data_dict[edges[0]]['x1x1'] is dp.data_dict[edge2[0]]['x1x1'], "Barycentre nodes should share the same x1x1"
+                assert dp.data_dict[edges[0]]['x2x2'] is dp.data_dict[edge2[0]]['x2x2'], "Barycentre nodes should share the same x2x2"
 
         elif 'grid' in dp.data_dict[edge2[0]]:
             pass # we can use PyKeOps
-    
-def marginals(dp, epsilon, debiasing=True, nodes=None):
-    """
-    Calculate the marginals at the node(s) specified
-
-    ToDo: Its not ideal that we have have to pass on debiasing... hummm
-    """
-
-    # Process nodes input:
-    if nodes is None:
-        nodes = list(dp.graph.nodes)
-    elif isinstance(nodes, int):
-        nodes = [nodes]
-    elif isinstance(nodes, list):
-        pass
-    else:
-        raise TypeError("Invalid nodes input")
-
-    # Compute marginals
-    marginals = {}
-    for node in nodes:
-        marginals[node] = {}
-        marginals[node]['marginal'], marginals[node]['error'] = calculate_node_marginal(dp, node, epsilon, debiasing)
-
-    return marginals
-
-def calculate_node_marginal(dp, node, epsilon, debiasing):
-    """
-    Calculate the marginal for a specific node.
-    """
-    # Get the node's data
-    node_data = dp.data_dict[node]
-
-    # I have to look across my neighbours to see whos connected, and sum inwards;
-    # I'm going to first do this only for the pairwise approach this its a lot more simple than 
-    # the general graph case
-
-    # Compute the marginal - depending on tensorisation or not
-    for neighbour in dp.graph.neighbors(node):
-        edge = (node, neighbour) if (node, neighbour) in dp.graph.edges else (neighbour, node)
-
-        if debiasing:
-            if hasattr(dp.data_dict[node], 'debiased_potential'):
-                b = dp.data_dict[node]['a'] * dp.data_dict[node]['debiased_potential']
-                a = dp.data_dict[neighbour]['a']
-            elif hasattr(dp.data_dict[neighbour], 'debiased_potential'):
-                b = dp.data_dict[node]['a']
-                a = dp.data_dict[neighbour]['a'] * dp.data_dict[neighbour]['debiased_potential']
-            else:
-                raise Warning("No debiasing potentials attached to either node, yet using debiasing")
-            
-            if hasattr(dp.data_dict[node], 'debiased_potential') and hasattr(dp.data_dict[neighbour], 'debiased_potential'):
-                raise Warning("Both nodes have debiasing potentials attached, this is unexpected behaviour")
-        else:
-            a = dp.data_dict[neighbour]['a']
-            b = dp.data_dict[node]['a']  
-
-        if 'x1y1' in dp.data_dict[edge] and 'x2y2' in dp.data_dict[edge]:
-            # we can tensorise 
-            marginal = _tensorised_marginal_reduction(
-                dp.data_dict[edge]['x1y1'], # either order tensorise_f will sort it
-                dp.data_dict[edge]['x2y2'],
-                epsilon,
-                a,
-                b,
-            )
-        elif 'grid' in dp.data_dict[node] and 'grid' in dp.data_dict[neighbour]:
-            # we can use PyKeOps
-            marginal = _flat_grid_marginal_reduction(
-                dp.data_dict[neighbour]['grid'],
-                dp.data_dict[node]['grid'],
-                epsilon,
-                a,
-                b,
-            )
-
-    error = torch.norm(
-        marginal - node_data['density'],
-        p=float('inf')
-    ).item()
-
-    return marginal, error
-
-
-# If debiasing we can 'attach' the debiasing potential to the marginal reduction
-# of a or b.
-def _tensorised_marginal_reduction(x1y1, x2y2, epsilon, ai, bj):
-    return tensorise_f(
-        torch.exp(-x1y1/epsilon),
-        torch.exp(-x2y2/epsilon),
-        ai,
-    ) * bj
-
-def _flat_grid_marginal_reduction(X, Y, epsilon, ai, bj):
-    return chizat_marginals(
-        X,
-        Y,
-        epsilon,
-        ai,
-        bj,
-    )
 
 
 def asymmetric_cost(
@@ -389,14 +296,14 @@ def asymmetric_cost(
         verbose: bool = False,
 ):  
     
-    epsilon = dp._torch_numpy_process(epsilon)
+    epsilon = dp._torch_numpy_process(epsilon).view(-1, 1)
     rho = dp._torch_numpy_process(rho)
 
 
     us_e = []
     for edge in dp.graph.edges:
         weighting = dp.graph.edges[edge]['weight']
-        unbal_sinkhorn_div = _asymmetric_individual_cost()
+        unbal_sinkhorn_div = _asymmetric_individual_edge_cost(dp, edge, epsilon, rho, aprox, debiasing)
         us_e.append(unbal_sinkhorn_div * weighting)
 
     if debiasing:
@@ -404,9 +311,11 @@ def asymmetric_cost(
         d = dp.data_dict[edge[0]]['debiased_potential']
         debiasing_term = _calculate_debiasing_potential_symmetric_term(d, dp, edge[0], epsilon)
 
-    return sum(us_e)- epsilon * debiasing_term/2,  us_e
+        return sum(us_e) - epsilon * debiasing_term/2,  us_e
+    else:
+        return sum(us_e), us_e
 
-def _asymmetric_individual_cost(
+def _asymmetric_individual_edge_cost(
         dp,
         edge,
         epsilon,
@@ -418,15 +327,15 @@ def _asymmetric_individual_cost(
     data_node = edge[1]
 
     if debiasing:
-        if hasattr(dp.data_dict[bary_node], 'debiased_potential'):
+        if 'debiased_potential' in dp.data_dict[bary_node]:
             b = dp.data_dict[bary_node]['a'] * dp.data_dict[bary_node]['debiased_potential']
             a = dp.data_dict[data_node]['a']
-        elif hasattr(dp.data_dict[data_node], 'debiased_potential'):
+        elif 'debiased_potential' in dp.data_dict[data_node]:
             raise Warning("No debiasing potentials should be attached to the data")
         else:
             raise Warning("No debiasing potentials attached to either node, yet using debiasing")
 
-        if hasattr(dp.data_dict[bary_node], 'debiased_potential') and hasattr(dp.data_dict[data_node], 'debiased_potential'):
+        if 'debiased_potential' in dp.data_dict[bary_node] and 'debiased_potential' in dp.data_dict[data_node]:
             raise Warning("Both nodes have debiasing potentials attached, this is unexpected behaviour")
     else:
         a = dp.data_dict[data_node]['a']
@@ -452,20 +361,22 @@ def _calculate_dual_cost_constant(dp, edge, epsilon, debiasing):
     data_node = edge[1]
 
     if debiasing:
-        if hasattr(dp.data_dict[bary_node], 'debiased_potential'):
+        if 'debiased_potential' in dp.data_dict[bary_node]:
             b = torch.ones_like(dp.data_dict[bary_node]['a']) * dp.data_dict[bary_node]['debiased_potential']
             a = torch.ones_like(dp.data_dict[data_node]['a'])
-        elif hasattr(dp.data_dict[data_node], 'debiased_potential'):
+        elif 'debiased_potential' in dp.data_dict[data_node]:
             raise Warning("No debiasing potentials should be attached to the data")
         else:
             raise Warning("No debiasing potentials attached to either node, yet using debiasing")
 
-        if hasattr(dp.data_dict[bary_node], 'debiased_potential') and hasattr(dp.data_dict[data_node], 'debiased_potential'):
+        if 'debiased_potential' in dp.data_dict[bary_node] and 'debiased_potential' in dp.data_dict[data_node]:
             raise Warning("Both nodes have debiasing potentials attached, this is unexpected behaviour")
     else:
         a = torch.ones_like(dp.data_dict[data_node]['a'])
         b = torch.ones_like(dp.data_dict[bary_node]['a'])
 
+
+    # These terms are the same as the marginal term reductions
     if 'x1y1' in dp.data_dict[edge] and 'x2y2' in dp.data_dict[edge]:
         # we can tensorise 
         cost_constant = _tensorised_marginal_reduction(
@@ -492,6 +403,10 @@ def _calculate_debiasing_potential_symmetric_term(d, dp, node, epsilon):
     we can hack the marginal reductions for find the cost constant summation <K>
     by using ones vectors for ai and bj
     """
+
+    print('Node for debiasing term:', node)
+    print(dp.data_dict[node].keys())
+    print(dp.data_dict[0].keys())
 
     if 'x1x1' in dp.data_dict[node] and 'x2x2' in dp.data_dict[node]:
         # we can tensorise 
