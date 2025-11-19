@@ -18,14 +18,14 @@ def test_alpha_reduction_pykeops(num_i, num_j):
     X = torch.randn(num_i, 2, dtype=torch.float64)
     Y = torch.randn(num_j, 2, dtype=torch.float64)
     E = torch.tensor([0.5], dtype=torch.float64).view(-1,1)
+    W = torch.tensor([0.77], dtype=torch.float64).view(-1,1)
     m = abs(torch.randn(num_i, 1, dtype=torch.float64))
 
     # Run your function
-    temp = alpha_reduction_pykeops(F, X, Y, E, m)
-
+    temp = alpha_reduction_pykeops(F, X, Y, E, m, W)
     # Reference computation
     ref = (
-        torch.exp((F.view(-1, 1) - torch.cdist(X, Y) ** 2 / 2) / E) * m.view(-1, 1)
+        torch.exp((F.view(-1, 1) - W * torch.cdist(X, Y) ** 2 / 2) / E) * m.view(-1, 1)
     ).sum(0)
 
     print(temp/ref)
