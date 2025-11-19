@@ -5,8 +5,8 @@ _alpha_reduction_pykeops = pykeops.Genred(
     f"((F - IntInv(2)*SqDist(X, Y))/E)",
     [
         "F = Vi(1)",  # potential i
-        f"X = Vi(2)",  # grid i
-        f"Y = Vj(2)",  # grid j
+        "X = Vi(2)",  # grid i
+        "Y = Vj(2)",  # grid j
         "E = Pm(1)",  # epsilon
         "M = Vi(1)",  # previous alpha(j,k) reductions
     ],
@@ -26,5 +26,6 @@ def alpha_reduction_pykeops(Fi, Xi, Yj, E, Mi):
     """
 
     temp = _alpha_reduction_pykeops(Fi, Xi, Yj, E, Mi)
-    return temp[:, 0] + torch.log(temp[:, 1])
+
+    return (torch.exp(temp[:, 0]) * temp[:, 1]).view(-1, 1)
  

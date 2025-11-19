@@ -81,9 +81,6 @@ def chizat_proxdiv_step(s, epsilon, rho, p, aprox='kl', u=None):
         return tv_proxdiv(s, epsilon, rho, p, u)
     else:
         raise NotImplementedError("Only kl and balanced aprox implemented")
-    
-
-
 
 
 def alpha_reduction(dp : SinkhornDataProcessor, j, k, epsilon, prod=True):
@@ -130,7 +127,7 @@ def alpha_reduction(dp : SinkhornDataProcessor, j, k, epsilon, prod=True):
     else:
         raise ValueError("No grid information found for alpha reduction")
 
-    assert( temp.shape[0] == dp.data_dict[j]['f'].shape[0])
+    assert( temp.shape == dp.data_dict[j]['f'].shape)
     
     # ToDo: update the dictionary - this is a recusive update which will overwrite previous values
     # which is probably added a lot of updates, but if I've calcauted a new value why wouldn't I 
