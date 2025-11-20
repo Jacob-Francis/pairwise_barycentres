@@ -4,8 +4,96 @@ from graph_dp import SinkhornDataProcessor
 from .utils import aprox_lse_update, alpha_reduction
 import networkx as nx
 
-def generate_dp():
-    pass
+
+def graph_creator_from_edges_and_weights(edges, weights=None):
+    import networkx as nx
+
+    if weights is None:
+        weights = [1/len(edges) for _ in edges]
+
+    G = nx.Graph()
+    for i, edge in enumerate(edges):
+        G.add_edge(edge[0], edge[1], weight=weights[i])
+    return G
+
+
+def generate_mmuotdataprocessor_star_graph(data, grid=None, weights=None, cuda_device=None, clear_grid=True):
+    """
+    # Data should be arranged as a list of lists
+    # i.e. data[i] = [density, grid]
+    # the grid and density could be [None, None]
+    # data[0] is the central node - this can be None (i.e. uniform density on barycentre grid)
+
+    grid if sharing all the same grid
+    
+    """
+    # Build graph
+    M = len(data)
+    edges = []
+    counter = 0
+    data_dict = {}
+    for i in range(M):
+        # Building star all from node 0
+        data_dict[counter] = {
+            'density': data[0][0], # this is the bayrcentre which will have a uniform density to start
+            'grid': grid if grid is not None else data[i][1],
+        }
+        counter += 1
+    
+    # Star graph edges
+    for i in range(1, M):
+        edges.append((0, i))
+        
+
+    graph = graph_creator_from_edges_and_weights(edges, weights)
+
+    # build data processor
+    dp = SinkhornDataProcessor(
+        potentials='f',
+        data_dict=data_dict,
+        graph=graph,
+        free_grids=False,
+        grid=grid,
+        cuda_device=cuda_device,
+    )
+
+    # Add alpha - adding edge keys if necessary
+    for edge in dp.graph.edges:
+        dp.data_dict.setdefault(edge, {})['alpha'] = torch.ones_like(dp.data_dict[edge[0]]['f'])
+        dp.data_dict.setdefault((edge[1], edge[0]), {})['alpha'] = torch.ones_like(dp.data_dict[edge[1]]['f'])
+
+    # If tenosrising then we need to add the tensorisation grids - since tensori_f decides on
+    # oreintation we can just point to the same grids
+
+    for edge in dp.graph.edges:
+        if 'x1y1' in dp.data_dict[edge]:
+            dp.data_dict[(edge[1], edge[0])]['x1y1'] = dp.data_dict[edge]['x1y1']
+            dp.data_dict[(edge[1], edge[0])]['x2y2'] = dp.data_dict[edge]['x2y2']
+
+    # clean memory
+    # We can't clean all memory we can only clean the grids that are not used by the data
+    # we can also make sure the barycentre grid is pointing to the same grid.
+    if clear_grid:
+        for edge in dp.graph.edges:
+            if 'x1y1' in dp.data_dict[edge]:
+                try:
+                    del dp.data_dict[edge[0]]['grid']
+                    del dp.data_dict[edge[1]]['grid']
+                except (KeyError):
+                    pass
+
+    return dp
+
+def generate_mmuotdataprocessor(data, graph, grid=None, weights=None, cuda_device=None):
+    """
+    # Data should be arranged as a list of lists
+    # i.e. data[i] = [density, grid]
+    # the grid and density could be [None, None]
+    # data[0] is the central node
+    """
+    raise NotImplementedError("General graph generation not implemented yet")
+   
+
 
 def procesinng_data_holder_for_mmot():
     pass

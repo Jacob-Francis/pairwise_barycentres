@@ -62,6 +62,8 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
         self.data_dict = data_dict
         self.pykeops = pykeops
 
+        assert len(self.graph.nodes) == len(self.data_dict), "Data dict and graph nodes do not match in size"
+
         # Run processing of the graph edges
         self.build_edges(grid=grid)
         self._density_processing(density=density)
@@ -70,6 +72,15 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
         
         # Useful attributes
         self.num_of_edges = len(self.graph.edges)
+
+        self.process_graph_weights()
+
+    def process_graph_weights(self):
+        # Ensure weight on correct device
+        for edge in self.graph.edges:
+            self.graph[edge[0]][edge[1]]['weight'] = self._torch_numpy_process(
+                self.graph[edge[0]][edge[1]]['weight']
+            ).view(-1,1)
 
     def _process_grids(self, edge, grid1, grid2):
         """

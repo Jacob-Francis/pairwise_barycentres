@@ -115,6 +115,7 @@ def alpha_reduction(dp : SinkhornDataProcessor, j, k, epsilon, prod=True):
             alpha*dp.data_dict[k]['density'] if prod else alpha/N,
             dp.data_dict[(k)]['f'],
             epsilon,
+            dp.graph[j][k]['weight'],
         )
     elif 'grid' in dp.data_dict[k] and 'grid' in dp.data_dict[j]:
         temp = alpha_reduction_pykeops(
@@ -122,7 +123,8 @@ def alpha_reduction(dp : SinkhornDataProcessor, j, k, epsilon, prod=True):
                 Xi=dp.data_dict[k]['grid'],
                 Yj=dp.data_dict[j]['grid'],
                 E=epsilon,
-                Mi=alpha.view(-1, 1)*dp.data_dict[k]['density'].view(-1, 1) if prod else alpha.view(-1, 1)/N
+                Mi=alpha.view(-1, 1)*dp.data_dict[k]['density'].view(-1, 1) if prod else alpha.view(-1, 1)/N,
+                W=dp.graph[j][k]['weight'],
                 )
     else:
         raise ValueError("No grid information found for alpha reduction")
@@ -132,12 +134,16 @@ def alpha_reduction(dp : SinkhornDataProcessor, j, k, epsilon, prod=True):
     # ToDo: update the dictionary - this is a recusive update which will overwrite previous values
     # which is probably added a lot of updates, but if I've calcauted a new value why wouldn't I 
     # keep it? I'm guessing I should - actually but for some this will be opnes!?
+    
+    # Store the new alpha reduction in the data dict
+    dp.data_dict[(j, k)]['alpha'] = temp
+
     return temp
     
-def _tensorised_alpha_reduction(x1y1, x2y2, a, f, epsilon):
+def _tensorised_alpha_reduction(x1y1, x2y2, a, f, epsilon, W):
     return tensorise_f(
-        torch.exp(-x1y1/epsilon),
-        torch.exp(-x2y2/epsilon),
+        torch.exp(-W*x1y1/epsilon),
+        torch.exp(-W*x2y2/epsilon),
         a*torch.exp(f/epsilon)
     )
 

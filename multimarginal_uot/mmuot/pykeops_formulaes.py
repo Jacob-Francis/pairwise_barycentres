@@ -26,7 +26,7 @@ def alpha_reduction_pykeops(Fi, Xi, Yj, E, Mi, W):
     "M = Vi(1)",  # previous alpha(j,k) reductions
     "W = Pm(1)",  # edge weight
     """
-
+    print('Devuices', Fi.device, Xi.device, Yj.device, E.device, Mi.device, W.device)
     temp = _alpha_reduction_pykeops(Fi, Xi, Yj, E, Mi, W)
 
     return (torch.exp(temp[:, 0]) * temp[:, 1]).view(-1, 1)
