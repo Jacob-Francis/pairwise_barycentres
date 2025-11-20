@@ -35,7 +35,7 @@ def generate_mmuotdataprocessor_star_graph(data, grid=None, weights=None, cuda_d
     for i in range(M):
         # Building star all from node 0
         data_dict[counter] = {
-            'density': data[0][0], # this is the bayrcentre which will have a uniform density to start
+            'density': data[i][0], # this is the bayrcentre which will have a uniform density to start
             'grid': grid if grid is not None else data[i][1],
         }
         counter += 1
@@ -43,7 +43,6 @@ def generate_mmuotdataprocessor_star_graph(data, grid=None, weights=None, cuda_d
     # Star graph edges
     for i in range(1, M):
         edges.append((0, i))
-        
 
     graph = graph_creator_from_edges_and_weights(edges, weights)
 
