@@ -322,10 +322,10 @@ def test_alpha_reduction_with_different_grid_random_density_prod_true(n1, n2, m1
     dp = generate_mmuotdataprocessor_star_graph(data, grid=None, clear_grid=False) 
     epsilon = dp._torch_numpy_process(max(L / np.sqrt(n1 * n2), L / np.sqrt(m1 * m2))).view(-1, 1)
 
-    alpha = alpha_reduction(dp, 0, 1, epsilon=epsilon, prod=False)
+    alpha = alpha_reduction(dp, 0, 1, epsilon=epsilon, prod=True)
 
     # Torch version for comparison
-    a_0_1_true = torch.exp(
+    a_0_1_true = (torch.exp(
         (
             dp.data_dict[1]["f"].view(-1, 1)
             - torch.cdist(
@@ -337,16 +337,16 @@ def test_alpha_reduction_with_different_grid_random_density_prod_true(n1, n2, m1
             / 2
         )
         / epsilon
-    ).sum(
+    )*dp.data_dict[1]["density"].view(-1, 1)).sum(
         0
-    ) / np.prod(dp.data_dict[1]["f"].shape) # times none since 2 is a leaf node
+    ) # times none since 2 is a leaf node
 
     assert torch.allclose(alpha.view(-1), a_0_1_true.view(-1), atol=1e-8), "Alpha reduction recursion failed"
 
-    alpha = alpha_reduction(dp, 0,2, epsilon=epsilon, prod=False)
+    alpha = alpha_reduction(dp, 0,2, epsilon=epsilon, prod=True)
 
     # Torch version for comparison
-    a_0_3_true = torch.exp(
+    a_0_3_true = (torch.exp(
         (
             dp.data_dict[2]["f"].view(-1, 1)
             - torch.cdist(
@@ -358,13 +358,13 @@ def test_alpha_reduction_with_different_grid_random_density_prod_true(n1, n2, m1
             / 2
         )
         / epsilon
-    ).sum(
+    )*dp.data_dict[2]["density"].view(-1, 1)).sum(
         0
-    ) / np.prod(dp.data_dict[2]["f"].shape) # times none since 3 is a leaf node
+    )  # times none since 3 is a leaf node
 
     assert torch.allclose(alpha.view(-1), a_0_3_true.view(-1), atol=1e-8), "Alpha reduction recursion failed"
 
-    alpha = alpha_reduction(dp, 2,0, epsilon=epsilon, prod=False)
+    alpha = alpha_reduction(dp, 2,0, epsilon=epsilon, prod=True)
 
     # Torch version for comparison
     a_2_0_true = (
@@ -382,15 +382,16 @@ def test_alpha_reduction_with_different_grid_random_density_prod_true(n1, n2, m1
                 )
                 / epsilon
             )
-            * a_0_1_true.view(-1, 1)
+            * a_0_1_true.view(-1, 1)*dp.data_dict[0]["density"].view(-1,1)
         )
         .sum(0)
         .view(
             -1,
         )
-    ) / np.prod(dp.data_dict[0]["f"].shape)
+    ) 
 
     assert torch.allclose(alpha.view(-1), a_2_0_true.view(-1), atol=1e-5), "Alpha reduction recursion failed"
+
 
 if __name__ == "__main__":
     import pytest

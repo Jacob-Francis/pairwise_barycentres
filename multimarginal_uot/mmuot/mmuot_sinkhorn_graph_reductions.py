@@ -111,13 +111,13 @@ def sinkhorn_update(dp: SinkhornDataProcessor, j, epsilon, rho, aprox='balanced'
     # ToDo i think i shoudl be able to stablaise this since we have the max weighted shift inside 
     # pykeops, and then we take log
     for i in dp.graph.neighbors(j):
-        temp *= dp.data_dict["edges"][(j, i)]["alpha"]
+        temp *= dp.data_dict[(j, i)]["alpha"]
 
     # Log-sum-exp
     if prod:
         temp = - epsilon * torch.log(temp)
     else:
-        temp = epsilon * torch.log(dp.data_dict[j]["data"]) - epsilon*torch.log(temp)
+        temp = epsilon * torch.log(dp.data_dict[j]["density"]) - epsilon*torch.log(temp)
 
     # pointwise aprox;
     temp = aprox_lse_update(temp, epsilon, rho, aprox=aprox)
@@ -207,7 +207,7 @@ def mmuot_marginal_j(dp: SinkhornDataProcessor, j, epsilon, prod=True, update_al
     
     # marginal errror
     err = torch.linalg.norm(
-        marginal.view(-1) - dp.data_dict[j]['data'].view(-1), ord=float("inf")
+        marginal.view(-1) - dp.data_dict[j]['density'].view(-1), ord=float("inf")
     ).item()
 
     return marginal, err

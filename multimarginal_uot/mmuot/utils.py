@@ -135,11 +135,11 @@ def alpha_reduction(dp : SinkhornDataProcessor, j, k, epsilon, prod=True):
     # which is probably added a lot of updates, but if I've calcauted a new value why wouldn't I 
     # keep it? I'm guessing I should - actually but for some this will be opnes!?
     
-    # Store the new alpha reduction in the data dict
+    # Store the new alpha reduction in the data dict 
     dp.data_dict[(j, k)]['alpha'] = temp
 
     return temp
-    
+
 def _tensorised_alpha_reduction(x1y1, x2y2, a, f, epsilon, W):
     return tensorise_f(
         torch.exp(-W*x1y1/epsilon),
