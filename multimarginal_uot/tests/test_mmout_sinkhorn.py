@@ -4,6 +4,7 @@ from mmuot import alpha_reduction, generate_mmuotdataprocessor_star_graph, sinkh
 import numpy as np
 import networkx as nx
 
+
 @pytest.mark.parametrize(
     "n1, n2, L, grid_type",
     [   (11, 11, 0.9, "flat"),
@@ -18,8 +19,7 @@ import networkx as nx
 
     ],
 )  # noqa: E501
-def test_sinkhorn_reduction_with_same_grid_uniform_density_uniform_measure_root_node(n1, n2, L, grid_type):
-
+def test_sinkhorn_reduction_with_same_grid_uniform_density_uniform_measure_multi_it(n1, n2, L, grid_type):
     if grid_type == "flat":
         X = torch.cartesian_prod(
             torch.linspace(0, L, n1), torch.linspace(0, L, n2)
@@ -89,9 +89,8 @@ def test_sinkhorn_reduction_with_same_grid_uniform_density_uniform_measure_root_
         0
     ) / np.prod(dp.data_dict[2]["f"].shape) 
 
-    f_new = (
-        dp.data_dict[0]["f"].view(-1)
-        + epsilon * torch.log(dp.data_dict[0]["density"].view(-1))
+    f_0 = (
+        epsilon * torch.log(dp.data_dict[0]["density"].view(-1))
         - epsilon * torch.log(a_0_1_true.view(-1) * a_0_2_true.view(-1))
     )
 
@@ -100,65 +99,12 @@ def test_sinkhorn_reduction_with_same_grid_uniform_density_uniform_measure_root_
         dp.data_dict[(p_j, j)]['alpha'] = alpha_reduction(dp, p_j,j, epsilon=epsilon, prod=False)
 
     f, err = sinkhorn_update(dp, 0, epsilon, rho=1.0, aprox='balanced', prod=False)
-
+    dp.data_dict[0]['f'] = f.clone()
     assert torch.allclose(
-        f_new.view(-1), f.view(-1), atol=1e-8
+        f_0.view(-1), f.view(-1), atol=1e-8
     ), "Sinkhorn update failed"
 
-# --------------------------------------------------
-@pytest.mark.parametrize(
-    "n1, n2, L, grid_type",
-    [   (11, 11, 0.9, "flat"),
-        (11, 10,  0.9, "flat"),
-        (11, 12,  0.9, "flat"),
-        (9, 8, 3.5, "tensor"),
-        (8, 9, 3.5, "tensor"),
-        (8, 8, 3.5, "tensor"),
-        (12, 12,  6.0, "tuple"),
-        (12, 13,  6.0, "tuple"),
-        (12, 11,  6.0, "tuple"),
-
-    ],
-)  # noqa: E501
-def test_sinkhorn_reduction_with_same_grid_uniform_density_uniform_measure_leaf_node(n1, n2, L, grid_type):
-
-    if grid_type == "flat":
-        X = torch.cartesian_prod(
-            torch.linspace(0, L, n1), torch.linspace(0, L, n2)
-        ).type(torch.DoubleTensor)
-    elif grid_type == "tensor":
-        X = torch.stack(
-            torch.meshgrid(
-                torch.linspace(0, L, n1), torch.linspace(0, L, n2), indexing="ij"
-            ),
-            dim=-1,
-        ).type(torch.DoubleTensor)
-    elif grid_type == "tuple":
-        X = (torch.linspace(0, L, n1), torch.linspace(0, L, n2))
-
-    # flat grid for truth
-    Y = torch.cartesian_prod(
-            torch.linspace(0, L, n1), torch.linspace(0, L, n2)
-        ).type(torch.DoubleTensor)
-
-    data = []
-    members = 3  # fits to compare against numpy
-
-    for _ in range(members):
-        data.append([None, None])  # uniform density, grid will equal everywhere
-
-    # generate the barycentre dataprocessor class which will store all objects
-    # of interest. It will also create the correct graph, and given no density of graphs
-    # will create uniform densities on the grids
-    dp = generate_mmuotdataprocessor_star_graph(data, grid=X, clear_grid=True) 
-    epsilon = dp._torch_numpy_process(L / np.sqrt(n1 * n2)).view(-1, 1)
-    Y = dp._torch_numpy_process(Y)
-
-    # Calculate f update using torhc first since sinkhorn_update
-    # works in place
-
-    # Calcuate projection
-    # Torch version for comparison
+    ################### Second it
     a_0_2_true = torch.exp(
         (
             dp.data_dict[2]["f"].view(-1, 1)
@@ -175,6 +121,11 @@ def test_sinkhorn_reduction_with_same_grid_uniform_density_uniform_measure_leaf_
         0
     ) / np.prod(dp.data_dict[2]["f"].shape) 
 
+    alpha = alpha_reduction(dp, 0,2, epsilon=epsilon, prod=False)
+
+    assert torch.allclose(alpha.view(-1), a_0_2_true.view(-1), atol=1e-5), "Alpha reduction recursion failed"
+
+
     a_1_0_true = (torch.exp(
         (
             dp.data_dict[0]["f"].view(-1, 1)
@@ -187,13 +138,17 @@ def test_sinkhorn_reduction_with_same_grid_uniform_density_uniform_measure_leaf_
             / 2
         )
         / epsilon
-    )*a_0_2_true).sum(
+    )*a_0_2_true.view(-1, 1)).sum(
         0
     ) / np.prod(dp.data_dict[0]["f"].shape) # times none since 2 is a leaf node
 
-    f_new = (
-        dp.data_dict[1]["f"].view(-1)
-        + epsilon * torch.log(dp.data_dict[1]["density"].view(-1))
+    alpha = alpha_reduction(dp, 1,0, epsilon=epsilon, prod=False)
+
+    assert torch.allclose(alpha.view(-1), a_1_0_true.view(-1), atol=1e-5), "Alpha reduction recursion failed"
+
+
+    f_2 = (
+        epsilon * torch.log(dp.data_dict[1]["density"].view(-1))
         - epsilon * torch.log(a_1_0_true.view(-1))
     )
 
@@ -208,144 +163,181 @@ def test_sinkhorn_reduction_with_same_grid_uniform_density_uniform_measure_leaf_
     f, err = sinkhorn_update(dp, 1, epsilon, rho=1.0, aprox='balanced', prod=False)
 
     assert torch.allclose(
-        f_new.view(-1), f.view(-1), atol=1e-8
+        f_2.view(-1), f.view(-1), atol=1e-8
     ), "Sinkhorn update failed"
 
 
-# @pytest.mark.parametrize("num_1,num_2", [(10, 11), (20, 50), (5, 17)])
-# def test_sinkhorn_update_leaf_node(num_1, num_2):
-#     dimension = 2
-#     epsilon = torch.Tensor([0.5])
+@pytest.mark.parametrize(
+    "n1, n2, m1, m2, L, grid_type",
+    [
+        (11, 10, 5, 7, 0.9, "flat"),
+        (8, 8, 13, 8, 3.5, "tensor"),
+        (12, 11, 9, 9, 2.0, "tuple"),
+    ],
+)  # noqa: E501
+def test_alpha_reduction_with_different_grid_random_density_prod_true(n1, n2, m1, m2, L, grid_type):
 
-#     G = build_star_graph(2, weights=None, plot_graph=False)
-#     grid_1 = torch.cartesian_prod(
-#         torch.linspace(0, 1, num_1),
-#         torch.Tensor([1.0]),
-#     ).view(num_1, dimension)
-#     grid_2 = torch.cartesian_prod(
-#         torch.linspace(0, 1, num_2),
-#         torch.Tensor([1.0]),
-#     ).view(num_2, dimension)
+    np.random.seed(n1*n2*m1*m2)
+    members = 2
+    # tuple toggle for torch testing
+    toggle = True
+    if grid_type == "flat":
+        data = []
+        Y = torch.cartesian_prod(
+            torch.linspace(0, L, m1), torch.linspace(0, L, m2)
+        ).type(torch.DoubleTensor)
+        density = torch.abs(torch.randn(m1*m2)) 
+        data.append([density, Y]) # central grid
+        for m in range(members): # member grids
+            X = torch.cartesian_prod(
+                torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members))
+            ).type(torch.DoubleTensor)
+            density = torch.abs(torch.randn_like(X[:,0]))
+            data.append([density, X])  # uniform density, grid will equal everywhere
+        
+    elif grid_type == "tensor":
+        data = []
+        Y = torch.stack(
+            torch.meshgrid(
+                torch.linspace(0, L, m1), torch.linspace(0, L, m2), indexing="ij"
+            ),
+            dim=-1,
+        ).type(torch.DoubleTensor)
+        density = torch.abs(torch.randn_like(Y[...,0]))
+        data.append([density, Y])  # central grid
+        for m in range(members):
+            X = torch.stack(
+                torch.meshgrid(
+                    torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)), indexing="ij"
+                ),
+                dim=-1,
+            ).type(torch.DoubleTensor)
+            density = torch.abs(torch.randn_like(X[...,0]))
+            data.append([density, X])
+        
+    elif grid_type == "tuple":
+        toggle = False
+        data = []
+        Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
+        density = torch.abs(torch.randn(m1, m2))
+        data.append([density, Y])  # central grid
+        for m in range(members):
+            X = (torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)))
+            density = torch.abs(torch.randn(len(X[0]), len(X[1])))
+            data.append([density, X])
 
-#     # root node grid
-#     num_i = max(num_1, num_2)
-#     grid = torch.cartesian_prod(torch.linspace(0, 1, num_i), torch.Tensor([1.0])).view(
-#         num_i, dimension
-#     )
+    # generate the barycentre dataprocessor class which will store all objects
+    # of interest. It will also create the correct graph, and given no density of graphs
+    # will create uniform densities on the grids
+    dp = generate_mmuotdataprocessor_star_graph(data, grid=None, clear_grid=False) 
+    epsilon = dp._torch_numpy_process(max(L / np.sqrt(n1 * n2), L / np.sqrt(m1 * m2))).view(-1, 1)
 
-#     # transport data to float64
-#     data = [
-#         [torch.ones(num_i) / num_i, grid],
-#         [torch.ones(num_1) / num_1, grid_1],
-#         [torch.ones(num_2) / num_2, grid_2],
-#     ]
-#     for k in range(3):
-#         data[k][0] = data[k][0].to(torch.float64)
-#         data[k][1] = data[k][1].to(torch.float64)
+    alpha = alpha_reduction(dp, 0, 1, epsilon=epsilon, prod=True)
 
-#     # Initialise graph dictionary
-#     graph_dictionary = initialise_graph_dictionary(G, data)
+    # Torch version for comparison
+    a_0_1_true = (torch.exp(
+        (
+            dp.data_dict[1]["f"].view(-1, 1)
+            - torch.cdist(
+                dp.data_dict[1]["grid"].view(-1,2).to(alpha) if toggle else torch.cartesian_prod(*dp.data_dict[1]["grid"]).to(alpha),
+                dp.data_dict[0]["grid"].view(-1,2).to(alpha) if toggle else torch.cartesian_prod(*dp.data_dict[0]["grid"]).to(alpha),
+            )
+            ** 2
+            * dp.graph[0][1]["weight"]
+            / 2
+        )
+        / epsilon
+    )*dp.data_dict[1]["density"].view(-1, 1)).sum(
+        0
+    ) # times none since 2 is a leaf node
 
-#     # To process to node 3, you first need to update the root node
+    assert torch.allclose(alpha.view(-1), a_0_1_true.view(-1), atol=1e-8), "Alpha reduction recursion failed"
 
-#     # Reverse pass, intialising the alpha values
-#     for p_j, j in reversed(list(nx.dfs_tree(G, source=1).edges)):
-#         alpha_reduction(p_j, j, graph_dictionary, epsilon)
+    alpha = alpha_reduction(dp, 0,2, epsilon=epsilon, prod=True)
 
-#     # ##############################################################
-#     # Before calauting the leaf node update, we need to calculate the true values since these functions work in place
-#     # ##############################################################
+    # Torch version for comparison
+    a_0_2_true = (torch.exp(
+        (
+            dp.data_dict[2]["f"].view(-1, 1)
+            - torch.cdist(
+                dp.data_dict[2]["grid"].view(-1,2).to(alpha) if toggle else torch.cartesian_prod(*dp.data_dict[2]["grid"]).to(alpha),
+                dp.data_dict[0]["grid"].view(-1,2).to(alpha) if toggle else torch.cartesian_prod(*dp.data_dict[0]["grid"]).to(alpha),
+            )
+            ** 2
+            * dp.graph[0][2]["weight"]
+            / 2
+        )
+        / epsilon
+    )*dp.data_dict[2]["density"].view(-1, 1)).sum(
+        0
+    )  # times none since 3 is a leaf node
 
-#     node = 1
-#     # Calcuate projection
-#     a_1_2_true = torch.exp(
-#         (
-#             graph_dictionary["nodes"][2]["f"].view(-1, 1)
-#             - torch.cdist(
-#                 graph_dictionary["nodes"][2]["grid"],
-#                 graph_dictionary["nodes"][1]["grid"],
-#             )
-#             ** 2
-#             * G[1][2]["weight"]
-#             / 2
-#         )
-#         / epsilon
-#     ).sum(
-#         0
-#     )  # times none since 2 is a leaf node
-#     # Torch version for comparison
-#     a_1_3_true = torch.exp(
-#         (
-#             graph_dictionary["nodes"][3]["f"].view(-1, 1)
-#             - torch.cdist(
-#                 graph_dictionary["nodes"][3]["grid"],
-#                 graph_dictionary["nodes"][1]["grid"],
-#             )
-#             ** 2
-#             * G[1][3]["weight"]
-#             / 2
-#         )
-#         / epsilon
-#     ).sum(
-#         0
-#     )  # times none since 2 is a leaf node
+    assert torch.allclose(alpha.view(-1), a_0_2_true.view(-1), atol=1e-8), "Alpha reduction recursion failed"
 
-#     f_new = (
-#         graph_dictionary["nodes"][node]["f"]
-#         + epsilon * torch.log(graph_dictionary["nodes"][node]["data"])
-#         - epsilon * torch.log(a_1_2_true.view(-1) * a_1_3_true.view(-1))
-#     )
+    # Check sinkhorn
+    f0 = -epsilon*torch.log(a_0_1_true.view(-1)*a_0_2_true.view(-1))
+    f, err = sinkhorn_update(dp, 0, epsilon, rho=1.0, aprox='balanced', prod=True)
+    dp.data_dict[0]['f'] = f.clone()
+    assert torch.allclose(
+        f0.view(-1), f.view(-1), atol=1e-8
+    ), "Sinkhorn update failed"
 
-#     # First root node update
-#     _ = sinkhorn_update(1, graph_dictionary, epsilon)
+    # Update a_0_1
+    alpha = alpha_reduction(dp, 0, 1, epsilon=epsilon, prod=True)
 
-#     assert torch.allclose(
-#         f_new, graph_dictionary["nodes"][node]["f"], atol=1e-8
-#     ), "Sinkhorn update failed"
+    # Torch version for comparison
+    a_0_1_true = (torch.exp(
+        (
+            dp.data_dict[1]["f"].view(-1, 1)
+            - torch.cdist(
+                dp.data_dict[1]["grid"].view(-1,2).to(alpha) if toggle else torch.cartesian_prod(*dp.data_dict[1]["grid"]).to(alpha),
+                dp.data_dict[0]["grid"].view(-1,2).to(alpha) if toggle else torch.cartesian_prod(*dp.data_dict[0]["grid"]).to(alpha),
+            )
+            ** 2
+            * dp.graph[0][1]["weight"]
+            / 2
+        )
+        / epsilon
+    )*dp.data_dict[1]["density"].view(-1, 1)).sum(
+        0
+    ) # times none since 2 is a leaf node
 
-#     # ##############################################################
-#     # Now we check node 3
-#     # ##############################################################
-#     node = 3
+    assert torch.allclose(alpha.view(-1), a_0_1_true.view(-1), atol=1e-8), "Alpha reduction recursion failed"
 
-#     # Torch version for comparison
-#     a_3_1_true = (
-#         (
-#             torch.exp(
-#                 (
-#                     graph_dictionary["nodes"][1]["f"].view(-1, 1)
-#                     - torch.cdist(
-#                         graph_dictionary["nodes"][1]["grid"],
-#                         graph_dictionary["nodes"][3]["grid"],
-#                     )
-#                     ** 2
-#                     * G[1][3]["weight"]
-#                     / 2
-#                 )
-#                 / epsilon
-#             )
-#             * a_1_2_true.view(-1, 1)
-#         )
-#         .sum(0)
-#         .view(
-#             -1,
-#         )
-#     )
+    # Torch version for comparison
+    a_2_0_true = (
+        (
+            torch.exp(
+                (
+                    dp.data_dict[0]["f"].view(-1, 1)
+                    - torch.cdist(
+                        dp.data_dict[0]["grid"].view(-1,2).to(alpha) if toggle else torch.cartesian_prod(*dp.data_dict[0]["grid"]).to(alpha),
+                        dp.data_dict[2]["grid"].view(-1,2).to(alpha) if toggle else torch.cartesian_prod(*dp.data_dict[2]["grid"]).to(alpha),
+                    )
+                    ** 2
+                    * dp.graph[0][2]["weight"]
+                    / 2
+                )
+                / epsilon
+            )
+            * a_0_1_true.view(-1, 1)*dp.data_dict[0]["density"].view(-1,1)
+        )
+        .sum(0)
+        .view(
+            -1,
+        )
+    ) 
+    alpha = alpha_reduction(dp, 2,0, epsilon=epsilon, prod=True)
 
-#     a = alpha_reduction(node, 1, graph_dictionary, epsilon=epsilon, output=True)
-#     assert torch.allclose(a, a_3_1_true, atol=1e-8)
+    assert torch.allclose(alpha.view(-1), a_2_0_true.view(-1), atol=1e-5), "Alpha reduction recursion failed"
 
-#     f_new = (
-#         graph_dictionary["nodes"][node]["f"]
-#         + epsilon * torch.log(graph_dictionary["nodes"][node]["data"])
-#         - epsilon * torch.log(a_3_1_true.view(-1))
-#     )
+    # sinkhorn
+    f2 = -epsilon*torch.log(a_2_0_true.view(-1))
+    f, err = sinkhorn_update(dp, 2, epsilon, rho=1.0, aprox='balanced', prod=True)
 
-#     err = sinkhorn_update(node, graph_dictionary, epsilon)
-
-#     assert torch.allclose(
-#         f_new, graph_dictionary["nodes"][node]["f"], atol=1e-8
-#     ), "Sinkhorn update failed"
+    assert torch.allclose(
+        f2.view(-1), f.view(-1), atol=1e-8
+    ), "Sinkhorn update failed"
 
 
 
