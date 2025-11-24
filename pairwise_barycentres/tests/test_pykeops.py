@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 import torch
-from pwbarycentres.pykeops_formulas import chizat_marginals, chizat_reduction
+from pwbarycentres import chizat_marginals, chizat_reduction
 import pykeops
 
 # Import the functions you provided (adjust the import path as necessary)
