@@ -62,10 +62,10 @@ def _dual_cost_data_term(a, data, aprox, epsilon, rho):
     if aprox == 'kl':
         return - rho* torch.sum((a**(-epsilon/rho) - 1)*data)  # I'm worried we might get instabilities here
     elif aprox == 'balanced':
-        return torch.sum(epsilon*torch.log(a) * data)
+        return rho*torch.sum(epsilon*torch.log(a) * data)
     elif aprox == 'tv':
         assert epsilon*torch.log(a) <= rho, "a should be less than rho for tv aprox"
-        return torch.sum(rho * (torch.maximum(epsilon*torch.log(a), rho))* data)
+        return torch.sum(rho * (-torch.maximum(-epsilon*torch.log(a), -rho))* data)
     else:
         raise NotImplementedError("Only kl and balanced aprox implemented")
 
