@@ -10,6 +10,5 @@ setup(
         "pykeops==2.1.2",
         "pytest>=7.2.0",
         "graph_data_processing>=0.1",
-
     ],
 )

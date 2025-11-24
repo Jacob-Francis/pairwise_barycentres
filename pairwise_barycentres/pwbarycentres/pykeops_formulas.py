@@ -9,9 +9,10 @@ _pykeops_chizat_reduction = generic_sum(
     "S = Vi(1)",
 )
 
+
 def chizat_reduction(Xi, Yj, epsilon, ai):
     """
-    
+
     "f = Vj(1)",  # Geo: 1 scalar per line
     f"X = Vi(2)",  # Geo: 2-dim
     f"Y = Vj(2)",  # Uni: 1 scalar per line
@@ -40,9 +41,10 @@ _pykeops_chizat_marginals = generic_sum(
     "C = Pm(1)",
 )
 
+
 def chizat_marginals(Xi, Yj, epsilon, ai, bj):
     """
-    
+
     "f = Vj(1)",  # Geo: 1 scalar per line
     f"X = Vi(2)",  # Geo: 2-dim
     f"Y = Vj(2)",  # Uni: 1 scalar per line
@@ -50,7 +52,7 @@ def chizat_marginals(Xi, Yj, epsilon, ai, bj):
     "S = Vi(1)",
     "P = Vj(1)",
     """
-    
+
     return _pykeops_chizat_marginals(
         Xi,
         Yj,
@@ -63,6 +65,7 @@ def chizat_marginals(Xi, Yj, epsilon, ai, bj):
 if __name__ == "__main__":
     # test chizat_reduction
     import torch
+
     Xi = torch.tensor([[0.0, 0.0], [1.0, 1.0]])
     Yj = torch.tensor([[0.0, 1.0], [1.0, 0.0]])
     epsilon = torch.tensor([0.1])

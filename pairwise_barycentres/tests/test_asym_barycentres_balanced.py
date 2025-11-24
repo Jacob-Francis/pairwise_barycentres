@@ -10,6 +10,7 @@ import networkx as nx
 
 torch.set_printoptions(precision=8)
 
+
 # --------------------------------------------------------
 # Testing barycentre and other grids which are the same
 # --------------------------------------------------------
@@ -25,10 +26,11 @@ torch.set_printoptions(precision=8)
         (12, 12, 3, 6.0, "tuple"),
         (12, 13, 3, 6.0, "tuple"),
         (12, 11, 3, 6.0, "tuple"),
-
     ],
 )  # noqa: E501
-def test_asym_bary_with_same_grid_uniform_density_without_debiasing(n1, n2, members, L, grid_type):
+def test_asym_bary_with_same_grid_uniform_density_without_debiasing(
+    n1, n2, members, L, grid_type
+):
 
     if grid_type == "flat":
         X = torch.cartesian_prod(
@@ -57,10 +59,12 @@ def test_asym_bary_with_same_grid_uniform_density_without_debiasing(n1, n2, memb
     # Assert that the orginal structure is correct
     for edges in data_processor.graph.edges():
         assert (
-            np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0) < 1e-5
+            np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0)
+            < 1e-5
         ), (data_processor.data_dict[edges[0]]["density"].sum().item())
         assert (
-            np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0) < 1e-5
+            np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0)
+            < 1e-5
         ), (data_processor.data_dict[edges[1]]["density"].sum().item())
 
     # run asymmetric sinkhorn algorithm
@@ -76,21 +80,26 @@ def test_asym_bary_with_same_grid_uniform_density_without_debiasing(n1, n2, memb
             debiasing=False,
         )
     )
-    assert barycentre_error_list[-1] < 1e-7 # less than tolerance
+    assert barycentre_error_list[-1] < 1e-7  # less than tolerance
 
     assert np.abs(barycentre.sum().item() - 1.0) < 1e-5
 
     for edges in data_processor.graph.edges():
         assert (
-            np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0) < 1e-5
+            np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0)
+            < 1e-5
         ), (data_processor.data_dict[edges[0]]["density"].sum().item())
         assert (
-            np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0) < 1e-5
+            np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0)
+            < 1e-5
         ), (data_processor.data_dict[edges[1]]["density"].sum().item())
 
     # Since using a uniform density the barycentre should also be uniform
     # Because of entropic error the tolerance is looser here
-    assert torch.allclose(barycentre, torch.ones_like(barycentre) / barycentre.numel(), atol=1e-2)
+    assert torch.allclose(
+        barycentre, torch.ones_like(barycentre) / barycentre.numel(), atol=1e-2
+    )
+
 
 @pytest.mark.parametrize(
     "n1, n2, members, L, grid_type",
@@ -104,10 +113,11 @@ def test_asym_bary_with_same_grid_uniform_density_without_debiasing(n1, n2, memb
         (12, 12, 3, 6.0, "tuple"),
         (12, 13, 3, 6.0, "tuple"),
         (12, 11, 3, 6.0, "tuple"),
-
     ],
 )  # noqa: E501
-def test_asym_bary_with_same_grid_uniform_density_with_debiasing(n1, n2, members, L, grid_type):
+def test_asym_bary_with_same_grid_uniform_density_with_debiasing(
+    n1, n2, members, L, grid_type
+):
 
     if grid_type == "flat":
         X = torch.cartesian_prod(
@@ -136,10 +146,12 @@ def test_asym_bary_with_same_grid_uniform_density_with_debiasing(n1, n2, members
     # Assert that the orginal structure is correct
     for edges in data_processor.graph.edges():
         assert (
-            np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0) < 1e-5
+            np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0)
+            < 1e-5
         ), (data_processor.data_dict[edges[0]]["density"].sum().item())
         assert (
-            np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0) < 1e-5
+            np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0)
+            < 1e-5
         ), (data_processor.data_dict[edges[1]]["density"].sum().item())
 
     # run asymmetric sinkhorn algorithm
@@ -150,27 +162,32 @@ def test_asym_bary_with_same_grid_uniform_density_with_debiasing(n1, n2, members
             rho=1.0,
             aprox="balanced",
             max_iterates=1000,
-            tol=1e-6, # relax tolerance because it was not converging very fast for this debiased setting?
+            tol=1e-6,  # relax tolerance because it was not converging very fast for this debiased setting?
             epsilon_annealing=False,
             debiasing=True,
         )
     )
 
-    assert barycentre_error_list[-1] < 1e-5 # less than tolerance
+    assert barycentre_error_list[-1] < 1e-5  # less than tolerance
 
     assert np.abs(barycentre.sum().item() - 1.0) < 1e-3
 
     for edges in data_processor.graph.edges():
         assert (
-            np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0) < 1e-3
+            np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0)
+            < 1e-3
         ), (data_processor.data_dict[edges[0]]["density"].sum().item())
         assert (
-            np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0) < 1e-3
+            np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0)
+            < 1e-3
         ), (data_processor.data_dict[edges[1]]["density"].sum().item())
-    
+
     # Since using a uniform density the barycentre should also be uniform
     # Because of debiasing we can make the tolerance tighter
-    assert torch.allclose(barycentre, torch.ones_like(barycentre) / barycentre.numel(), atol=1e-2)
+    assert torch.allclose(
+        barycentre, torch.ones_like(barycentre) / barycentre.numel(), atol=1e-2
+    )
+
 
 # --------------------------------------------------------
 # Testing barycentre and other grids which are different
@@ -183,7 +200,9 @@ def test_asym_bary_with_same_grid_uniform_density_with_debiasing(n1, n2, members
         (12, 11, 3, 9, 9, 2.0, "tuple"),
     ],
 )  # noqa: E501
-def test_asym_bary_with_different_grid_uniform_density_without_debiasing(n1, n2, members, m1, m2, L, grid_type):
+def test_asym_bary_with_different_grid_uniform_density_without_debiasing(
+    n1, n2, members, m1, m2, L, grid_type
+):
 
     if grid_type == "flat":
         X = torch.cartesian_prod(
@@ -233,14 +252,18 @@ def test_asym_bary_with_different_grid_uniform_density_without_debiasing(n1, n2,
         )
     )
 
-    assert barycentre_error_list[-1] < 1e-7 # less than tolerance
-
+    assert barycentre_error_list[-1] < 1e-7  # less than tolerance
 
     for edges in data_processor.graph.edges():
-        assert np.isclose(data_processor.data_dict[edges[0]]["density"].sum().item(), 1.0)
-        assert np.isclose(data_processor.data_dict[edges[1]]["density"].sum().item(), 1.0)
+        assert np.isclose(
+            data_processor.data_dict[edges[0]]["density"].sum().item(), 1.0
+        )
+        assert np.isclose(
+            data_processor.data_dict[edges[1]]["density"].sum().item(), 1.0
+        )
 
     # The uniform test is too strict when the grids differ
+
 
 @pytest.mark.parametrize(
     "n1, n2, members, m1, m2, L, grid_type",
@@ -250,7 +273,9 @@ def test_asym_bary_with_different_grid_uniform_density_without_debiasing(n1, n2,
         (12, 11, 3, 9, 9, 2.0, "tuple"),
     ],
 )  # noqa: E501
-def test_asym_bary_with_different_grid_uniform_density_with_debiasing(n1, n2, members, m1, m2, L, grid_type):
+def test_asym_bary_with_different_grid_uniform_density_with_debiasing(
+    n1, n2, members, m1, m2, L, grid_type
+):
 
     if grid_type == "flat":
         X = torch.cartesian_prod(
@@ -300,11 +325,15 @@ def test_asym_bary_with_different_grid_uniform_density_with_debiasing(n1, n2, me
         )
     )
 
-    assert barycentre_error_list[-1] < 1e-5 # less than tolerance
+    assert barycentre_error_list[-1] < 1e-5  # less than tolerance
 
     for edges in data_processor.graph.edges():
-        assert np.isclose(data_processor.data_dict[edges[0]]["density"].sum().item(), 1.0)
-        assert np.isclose(data_processor.data_dict[edges[1]]["density"].sum().item(), 1.0)
+        assert np.isclose(
+            data_processor.data_dict[edges[0]]["density"].sum().item(), 1.0
+        )
+        assert np.isclose(
+            data_processor.data_dict[edges[1]]["density"].sum().item(), 1.0
+        )
 
 
 # -------------------------------------------------------------------------------------------
@@ -318,15 +347,18 @@ def test_asym_bary_with_different_grid_uniform_density_with_debiasing(n1, n2, me
         (12, 11, 3, 9, 9, 2.0, "tuple"),
     ],
 )  # noqa: E501
-def test_asym_bary_with_all_different_grids_with_debiasing(n1, n2, members, m1, m2, L, grid_type):
+def test_asym_bary_with_all_different_grids_with_debiasing(
+    n1, n2, members, m1, m2, L, grid_type
+):
 
-    np.random.seed(n1*n2*members*m1*m2)
+    np.random.seed(n1 * n2 * members * m1 * m2)
 
     if grid_type == "flat":
         data = []
         for m in range(members):
             X = torch.cartesian_prod(
-                torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members))
+                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
             ).type(torch.DoubleTensor)
             data.append([None, X])  # uniform density, grid will equal everywhere
 
@@ -338,7 +370,9 @@ def test_asym_bary_with_all_different_grids_with_debiasing(n1, n2, members, m1, 
         for m in range(members):
             X = torch.stack(
                 torch.meshgrid(
-                    torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)), indexing="ij"
+                    torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                    torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+                    indexing="ij",
                 ),
                 dim=-1,
             ).type(torch.DoubleTensor)
@@ -352,11 +386,13 @@ def test_asym_bary_with_all_different_grids_with_debiasing(n1, n2, members, m1, 
     elif grid_type == "tuple":
         data = []
         for m in range(members):
-            X = (torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)))
+            X = (
+                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+            )
             data.append([None, X])
         Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
 
-    
     # generate the barycentre dataprocessor class which will store all objects
     # of interest. It will also create the correct graph, and given no density of graphs
     # will create uniform densities on the grids
@@ -373,15 +409,20 @@ def test_asym_bary_with_all_different_grids_with_debiasing(n1, n2, members, m1, 
             tol=1e-5,
             epsilon_annealing=False,
             debiasing=True,
-            verbose=True
+            verbose=True,
         )
     )
 
-    assert barycentre_error_list[-1] < 1e-5 # less than tolerance
+    assert barycentre_error_list[-1] < 1e-5  # less than tolerance
 
     for edges in data_processor.graph.edges():
-        assert np.isclose(data_processor.data_dict[edges[0]]["density"].sum().item(), 1.0, atol=1e-3)
-        assert np.isclose(data_processor.data_dict[edges[1]]["density"].sum().item(), 1.0, atol=1e-3)
+        assert np.isclose(
+            data_processor.data_dict[edges[0]]["density"].sum().item(), 1.0, atol=1e-3
+        )
+        assert np.isclose(
+            data_processor.data_dict[edges[1]]["density"].sum().item(), 1.0, atol=1e-3
+        )
+
 
 @pytest.mark.parametrize(
     "n1, n2, members, m1, m2, L, grid_type",
@@ -391,15 +432,18 @@ def test_asym_bary_with_all_different_grids_with_debiasing(n1, n2, members, m1, 
         (12, 11, 3, 9, 9, 2.0, "tuple"),
     ],
 )  # noqa: E501
-def test_asym_bary_with_all_different_grids_without_debiasing(n1, n2, members, m1, m2, L, grid_type):
+def test_asym_bary_with_all_different_grids_without_debiasing(
+    n1, n2, members, m1, m2, L, grid_type
+):
 
-    np.random.seed(n1*n2*members*m1*m2)
+    np.random.seed(n1 * n2 * members * m1 * m2)
 
     if grid_type == "flat":
         data = []
         for m in range(members):
             X = torch.cartesian_prod(
-                torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members))
+                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
             ).type(torch.DoubleTensor)
             data.append([None, X])  # uniform density, grid will equal everywhere
 
@@ -411,7 +455,9 @@ def test_asym_bary_with_all_different_grids_without_debiasing(n1, n2, members, m
         for m in range(members):
             X = torch.stack(
                 torch.meshgrid(
-                    torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)), indexing="ij"
+                    torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                    torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+                    indexing="ij",
                 ),
                 dim=-1,
             ).type(torch.DoubleTensor)
@@ -425,11 +471,13 @@ def test_asym_bary_with_all_different_grids_without_debiasing(n1, n2, members, m
     elif grid_type == "tuple":
         data = []
         for m in range(members):
-            X = (torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)))
+            X = (
+                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+            )
             data.append([None, X])
         Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
 
-    
     # generate the barycentre dataprocessor class which will store all objects
     # of interest. It will also create the correct graph, and given no density of graphs
     # will create uniform densities on the grids
@@ -450,11 +498,15 @@ def test_asym_bary_with_all_different_grids_without_debiasing(n1, n2, members, m
         )
     )
 
-    assert barycentre_error_list[-1] < 1e-7 # less than tolerance
+    assert barycentre_error_list[-1] < 1e-7  # less than tolerance
 
     for edges in data_processor.graph.edges():
-        assert np.isclose(data_processor.data_dict[edges[0]]["density"].sum().item(), 1.0)
-        assert np.isclose(data_processor.data_dict[edges[1]]["density"].sum().item(), 1.0)
+        assert np.isclose(
+            data_processor.data_dict[edges[0]]["density"].sum().item(), 1.0
+        )
+        assert np.isclose(
+            data_processor.data_dict[edges[1]]["density"].sum().item(), 1.0
+        )
 
 
 if __name__ == "__main__":

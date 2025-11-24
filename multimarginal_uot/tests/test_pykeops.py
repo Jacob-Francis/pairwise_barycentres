@@ -9,7 +9,7 @@ from mmuot import alpha_reduction_pykeops
         (10, 15),
         (20, 30),
         (13, 11),
-        (5,5),
+        (5, 5),
     ],
 )
 def test_alpha_reduction_pykeops(num_i, num_j):
@@ -17,8 +17,8 @@ def test_alpha_reduction_pykeops(num_i, num_j):
     F = torch.randn(num_i, 1, dtype=torch.float64)
     X = torch.randn(num_i, 2, dtype=torch.float64)
     Y = torch.randn(num_j, 2, dtype=torch.float64)
-    E = torch.tensor([0.5], dtype=torch.float64).view(-1,1)
-    W = torch.tensor([0.77], dtype=torch.float64).view(-1,1)
+    E = torch.tensor([0.5], dtype=torch.float64).view(-1, 1)
+    W = torch.tensor([0.77], dtype=torch.float64).view(-1, 1)
     m = abs(torch.randn(num_i, 1, dtype=torch.float64))
 
     # Run your function
@@ -28,8 +28,8 @@ def test_alpha_reduction_pykeops(num_i, num_j):
         torch.exp((F.view(-1, 1) - W * torch.cdist(X, Y) ** 2 / 2) / E) * m.view(-1, 1)
     ).sum(0)
 
-    print(temp/ref)
-    print('shapes', temp.shape, ref.shape)
+    print(temp / ref)
+    print("shapes", temp.shape, ref.shape)
     # Assert that results are close
     assert torch.allclose(
         temp, ref.view(-1, 1), atol=1e-8
@@ -133,7 +133,6 @@ def test_alpha_reduction_pykeops(num_i, num_j):
 #     assert torch.allclose(
 #         truth, ref, atol=1e-8
 #     ), f"Failed at difference {torch.linalg.norm(ref-truth)}"
-
 
 
 if __name__ == "__main__":

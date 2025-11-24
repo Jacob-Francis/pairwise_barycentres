@@ -13,8 +13,9 @@ _alpha_reduction_pykeops = pykeops.Genred(
     ],
     reduction_op="Max_SumShiftExpWeight",
     axis=0,
-    formula2="M", # its not in the formula but through weighted it dealt with
+    formula2="M",  # its not in the formula but through weighted it dealt with
 )
+
 
 def alpha_reduction_pykeops(Fi, Xi, Yj, E, Mi, W):
     """
@@ -30,4 +31,3 @@ def alpha_reduction_pykeops(Fi, Xi, Yj, E, Mi, W):
     temp = _alpha_reduction_pykeops(Fi, Xi, Yj, E, Mi, W)
 
     return (torch.exp(temp[:, 0]) * temp[:, 1]).view(-1, 1)
- 

@@ -62,14 +62,16 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
         self.data_dict = data_dict
         self.pykeops = pykeops
 
-        assert len(self.graph.nodes) == len(self.data_dict), "Data dict and graph nodes do not match in size"
+        assert len(self.graph.nodes) == len(
+            self.data_dict
+        ), "Data dict and graph nodes do not match in size"
 
         # Run processing of the graph edges
         self.build_edges(grid=grid)
         self._density_processing(density=density)
         if free_grids:
             self.free_grid_memory()
-        
+
         # Useful attributes
         self.num_of_edges = len(self.graph.edges)
 
@@ -78,9 +80,9 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
     def process_graph_weights(self):
         # Ensure weight on correct device
         for edge in self.graph.edges:
-            self.graph[edge[0]][edge[1]]['weight'] = self._torch_numpy_process(
-                self.graph[edge[0]][edge[1]]['weight']
-            ).view(-1,1)
+            self.graph[edge[0]][edge[1]]["weight"] = self._torch_numpy_process(
+                self.graph[edge[0]][edge[1]]["weight"]
+            ).view(-1, 1)
 
     def _process_grids(self, edge, grid1, grid2):
         """
@@ -100,7 +102,9 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
         self.data_dict[edge] = {}
 
         if isinstance(grid1, tuple) and isinstance(grid2, tuple):
-            self.data_dict[edge]["x1y1"], self.data_dict[edge]["x2y2"] = self._cost_for_tuple(grid1, grid2)
+            self.data_dict[edge]["x1y1"], self.data_dict[edge]["x2y2"] = (
+                self._cost_for_tuple(grid1, grid2)
+            )
 
         elif len(grid1.shape) == 3 and len(grid2.shape) == 3:
             print(
@@ -114,11 +118,15 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
 
             # Calculate cost matrices - the indexing works
             # because torch cdist eliminats the common axis which will have the same values.
-            self.data_dict[edge]["x1y1"], self.data_dict[edge]["x2y2"] = self._cost_for_meshgrid(grid1, grid2, n1, n2, m1, m2)
-            
+            self.data_dict[edge]["x1y1"], self.data_dict[edge]["x2y2"] = (
+                self._cost_for_meshgrid(grid1, grid2, n1, n2, m1, m2)
+            )
+
             # Prioritise tensoration
-        elif self.pykeops == True and not (isinstance(grid1, tuple) and isinstance(grid2, tuple)):
-            
+        elif self.pykeops == True and not (
+            isinstance(grid1, tuple) and isinstance(grid2, tuple)
+        ):
+
             assert grid1.shape[1] == 2 and grid2.shape[1] == 2, "We assume 2D points"
 
             # Need to process for PyKeOps - otherwise can delete?
@@ -154,7 +162,9 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
         Processes densities or points or potentials, with default 'None' values as ones*constant. Or convert input to torch type
         """
         if points is None:
-            weights = self._torch_numpy_process(const * torch.ones((n, m)).type(self.dtype) / (n * m))
+            weights = self._torch_numpy_process(
+                const * torch.ones((n, m)).type(self.dtype) / (n * m)
+            )
         else:
             weights = self._clone_process(points, non_blocking=True)
             weights = weights.view(n, m)
@@ -240,43 +250,46 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
 
             if del_graph:
                 del self.data_dict[k]["grid"]
-    
-    def _cost_for_meshgrid(self,grid1,grid2, n1, n2, m1, m2):
+
+    def _cost_for_meshgrid(self, grid1, grid2, n1, n2, m1, m2):
         return (
-                0.5
-                * torch.cdist(
-                    self._clone_process(grid1[:n1, 0], non_blocking=True),
-                    self._clone_process(grid2[:m1, 0], non_blocking=True),
-                )
-                ** 2,
-                0.5
-                * torch.cdist(
-                    self._clone_process(grid1[0, :n2], non_blocking=True),
-                    self._clone_process(grid2[0, :m2], non_blocking=True),
-                )
-                ** 2
+            0.5
+            * torch.cdist(
+                self._clone_process(grid1[:n1, 0], non_blocking=True),
+                self._clone_process(grid2[:m1, 0], non_blocking=True),
             )
+            ** 2,
+            0.5
+            * torch.cdist(
+                self._clone_process(grid1[0, :n2], non_blocking=True),
+                self._clone_process(grid2[0, :m2], non_blocking=True),
+            )
+            ** 2,
+        )
+
     def _cost_for_tuple(self, grid1, grid2):
         return (
-                0.5
-                * torch.cdist(
-                    self._clone_process(grid1[0], non_blocking=True).view(-1, 1),
-                    self._clone_process(grid2[0], non_blocking=True).view(-1, 1),
-                )
-                ** 2,
-                0.5
-                * torch.cdist(
-                    self._clone_process(grid1[1], non_blocking=True).view(-1, 1),
-                    self._clone_process(grid2[1], non_blocking=True).view(-1, 1),
-                )
-                ** 2
+            0.5
+            * torch.cdist(
+                self._clone_process(grid1[0], non_blocking=True).view(-1, 1),
+                self._clone_process(grid2[0], non_blocking=True).view(-1, 1),
             )
+            ** 2,
+            0.5
+            * torch.cdist(
+                self._clone_process(grid1[1], non_blocking=True).view(-1, 1),
+                self._clone_process(grid2[1], non_blocking=True).view(-1, 1),
+            )
+            ** 2,
+        )
+
 
 # ------------------------------------------------------------------------
 # ------------------------------------------------------------------------
 #  Sinkhorn Data Processor
 # ------------------------------------------------------------------------
 # ------------------------------------------------------------------------
+
 
 class SinkhornDataProcessor(BarycentreDataProcessor):
     def __init__(
@@ -306,14 +319,14 @@ class SinkhornDataProcessor(BarycentreDataProcessor):
     def _initial_dual_potentials_ab(self):
         # attach correct potential per node
         for node in self.graph.nodes:
-            self.data_dict[node]["a"] = self._torch_numpy_process(torch.ones_like(
-                self.data_dict[node]["density"]
-            ))
+            self.data_dict[node]["a"] = self._torch_numpy_process(
+                torch.ones_like(self.data_dict[node]["density"])
+            )
 
     def _initial_dual_potentials_fg(self):
 
         # attach correct potential per node
         for node in self.graph.nodes:
-            self.data_dict[node]["f"] = self._torch_numpy_process(torch.zeros_like(
-                self.data_dict[node]["density"]
-            ))
+            self.data_dict[node]["f"] = self._torch_numpy_process(
+                torch.zeros_like(self.data_dict[node]["density"])
+            )

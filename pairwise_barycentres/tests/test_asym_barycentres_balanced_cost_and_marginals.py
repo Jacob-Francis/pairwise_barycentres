@@ -6,11 +6,12 @@ from pwbarycentres import (
     asymmetric_sinkhorn_algorithm,
     generate_barycentredataprocessor,
     asymmetric_cost,
-    ot_marginals
+    ot_marginals,
 )
 import networkx as nx
 
 torch.set_printoptions(precision=8)
+
 
 # --------------------------------------------------------
 # Testing barycentre and other grids which are the same
@@ -27,10 +28,11 @@ torch.set_printoptions(precision=8)
         (12, 12, 3, 6.0, "tuple"),
         (12, 13, 3, 6.0, "tuple"),
         (12, 11, 3, 6.0, "tuple"),
-
     ],
 )  # noqa: E501
-def test_marginals_asym_bary_with_same_grid_uniform_density_without_debiasing(n1, n2, members, L, grid_type):
+def test_marginals_asym_bary_with_same_grid_uniform_density_without_debiasing(
+    n1, n2, members, L, grid_type
+):
 
     if grid_type == "flat":
         X = torch.cartesian_prod(
@@ -72,24 +74,27 @@ def test_marginals_asym_bary_with_same_grid_uniform_density_without_debiasing(n1
 
     # if given no nodes then they should all be returned
     marginals = ot_marginals(
-        data_processor,
-        epsilon=1 / np.sqrt(n1 * n2),
-        debiasing=False
+        data_processor, epsilon=1 / np.sqrt(n1 * n2), debiasing=False
     )
 
     for node in data_processor.graph.nodes():
-        assert marginals[node]['marginal'].sum().item() - 1.0 < 1e-5, marginals[node]['marginal'].sum().item() # less than tolerance
+        assert marginals[node]["marginal"].sum().item() - 1.0 < 1e-5, (
+            marginals[node]["marginal"].sum().item()
+        )  # less than tolerance
 
     for nodes in data_processor.graph.nodes():
-        assert marginals[nodes]['error'] < 1e-8, marginals[nodes]['error'] # less than tolerance
-    
-    cost, cost_list = asymmetric_cost(data_processor, 1 / np.sqrt(n1 * n2), rho=1.0, aprox="balanced", debiasing=False)
+        assert marginals[nodes]["error"] < 1e-8, marginals[nodes][
+            "error"
+        ]  # less than tolerance
+
+    cost, cost_list = asymmetric_cost(
+        data_processor, 1 / np.sqrt(n1 * n2), rho=1.0, aprox="balanced", debiasing=False
+    )
 
     # since balanced and equal weighting on all nodes the costs should be equal
     for k in cost_list:
         for j in cost_list:
             assert j == k
-
 
 
 @pytest.mark.parametrize(
@@ -104,10 +109,11 @@ def test_marginals_asym_bary_with_same_grid_uniform_density_without_debiasing(n1
         (12, 12, 3, 1.0, "tuple"),
         (12, 13, 3, 1.0, "tuple"),
         (12, 11, 3, 1.0, "tuple"),
-
     ],
 )  # noqa: E501
-def test_marginals_asym_bary_with_same_grid_uniform_density_with_debiasing(n1, n2, members, L, grid_type):
+def test_marginals_asym_bary_with_same_grid_uniform_density_with_debiasing(
+    n1, n2, members, L, grid_type
+):
 
     if grid_type == "flat":
         X = torch.cartesian_prod(
@@ -136,10 +142,12 @@ def test_marginals_asym_bary_with_same_grid_uniform_density_with_debiasing(n1, n
     # Assert that the orginal structure is correct
     for edges in data_processor.graph.edges():
         assert (
-            np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0) < 1e-5
+            np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0)
+            < 1e-5
         ), (data_processor.data_dict[edges[0]]["density"].sum().item())
         assert (
-            np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0) < 1e-5
+            np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0)
+            < 1e-5
         ), (data_processor.data_dict[edges[1]]["density"].sum().item())
 
     # run asymmetric sinkhorn algorithm
@@ -150,34 +158,38 @@ def test_marginals_asym_bary_with_same_grid_uniform_density_with_debiasing(n1, n
             rho=1.0,
             aprox="balanced",
             max_iterates=1000,
-            tol=1e-6, # relax tolerance because it was not converging very fast for this debiased setting?
+            tol=1e-6,  # relax tolerance because it was not converging very fast for this debiased setting?
             epsilon_annealing=False,
             debiasing=True,
-            verbose=True
+            verbose=True,
         )
     )
 
-    
     # if given no nodes then they should all be returned
     marginals = ot_marginals(
-        data_processor,
-        epsilon=1 / np.sqrt(n1 * n2),
-        debiasing=False
+        data_processor, epsilon=1 / np.sqrt(n1 * n2), debiasing=False
     )
 
     for node in data_processor.graph.nodes():
-        assert marginals[node]['marginal'].sum().item() - 1.0 < 1e-5, marginals[node]['marginal'].sum().item() # less than tolerance
+        assert marginals[node]["marginal"].sum().item() - 1.0 < 1e-5, (
+            marginals[node]["marginal"].sum().item()
+        )  # less than tolerance
 
     for nodes in data_processor.graph.nodes():
         # relax tolerance because it was not converging very fast for this debiased setting?
-        assert marginals[nodes]['error'] < 1e-5, marginals[nodes]['error'] # less than tolerance
-    
-    cost, cost_list = asymmetric_cost(data_processor, 1 / np.sqrt(n1 * n2), rho=1.0, aprox="balanced", debiasing=True)
+        assert marginals[nodes]["error"] < 1e-5, marginals[nodes][
+            "error"
+        ]  # less than tolerance
+
+    cost, cost_list = asymmetric_cost(
+        data_processor, 1 / np.sqrt(n1 * n2), rho=1.0, aprox="balanced", debiasing=True
+    )
 
     # since balanced and equal weighting on all nodes the costs should be equal
     for k in cost_list:
         for j in cost_list:
             assert j == k
+
 
 # --------------------------------------------------------
 # Testing barycentre and other grids which are different
@@ -190,7 +202,9 @@ def test_marginals_asym_bary_with_same_grid_uniform_density_with_debiasing(n1, n
         (12, 11, 3, 9, 9, 2.0, "tuple"),
     ],
 )  # noqa: E501
-def test_marginals_asym_bary_with_different_grid_uniform_density_without_debiasing(n1, n2, members, m1, m2, L, grid_type):
+def test_marginals_asym_bary_with_different_grid_uniform_density_without_debiasing(
+    n1, n2, members, m1, m2, L, grid_type
+):
 
     if grid_type == "flat":
         X = torch.cartesian_prod(
@@ -240,27 +254,37 @@ def test_marginals_asym_bary_with_different_grid_uniform_density_without_debiasi
         )
     )
 
-    
     # if given no nodes then they should all be returned
     marginals = ot_marginals(
         data_processor,
         epsilon=max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
-        debiasing=False
+        debiasing=False,
     )
 
     for node in data_processor.graph.nodes():
-        assert marginals[node]['marginal'].sum().item() - 1.0 < 1e-5, marginals[node]['marginal'].sum().item() # less than tolerance
+        assert marginals[node]["marginal"].sum().item() - 1.0 < 1e-5, (
+            marginals[node]["marginal"].sum().item()
+        )  # less than tolerance
 
     for nodes in data_processor.graph.nodes():
         # relax tolerance because it was not converging very fast for this debiased setting?
-        assert marginals[nodes]['error'] < 1e-5, marginals[nodes]['error'] # less than tolerance
-    
-    cost, cost_list = asymmetric_cost(data_processor, max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)), rho=1.0, aprox="balanced", debiasing=False)
+        assert marginals[nodes]["error"] < 1e-5, marginals[nodes][
+            "error"
+        ]  # less than tolerance
+
+    cost, cost_list = asymmetric_cost(
+        data_processor,
+        max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
+        rho=1.0,
+        aprox="balanced",
+        debiasing=False,
+    )
 
     # since balanced and equal weighting on all nodes the costs should be equal
     for k in cost_list:
         for j in cost_list:
             assert j == k
+
 
 @pytest.mark.parametrize(
     "n1, n2, members, m1, m2, L, grid_type",
@@ -270,7 +294,9 @@ def test_marginals_asym_bary_with_different_grid_uniform_density_without_debiasi
         (12, 11, 3, 9, 9, 2.0, "tuple"),
     ],
 )  # noqa: E501
-def test_marginals_asym_bary_with_different_grid_uniform_density_with_debiasing(n1, n2, members, m1, m2, L, grid_type):
+def test_marginals_asym_bary_with_different_grid_uniform_density_with_debiasing(
+    n1, n2, members, m1, m2, L, grid_type
+):
 
     if grid_type == "flat":
         X = torch.cartesian_prod(
@@ -324,17 +350,27 @@ def test_marginals_asym_bary_with_different_grid_uniform_density_with_debiasing(
     marginals = ot_marginals(
         data_processor,
         epsilon=max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
-        debiasing=False
+        debiasing=False,
     )
 
     for node in data_processor.graph.nodes():
-        assert marginals[node]['marginal'].sum().item() - 1.0 < 1e-5, marginals[node]['marginal'].sum().item() # less than tolerance
+        assert marginals[node]["marginal"].sum().item() - 1.0 < 1e-5, (
+            marginals[node]["marginal"].sum().item()
+        )  # less than tolerance
 
     for nodes in data_processor.graph.nodes():
         # relax tolerance because it was not converging very fast for this debiased setting?
-        assert marginals[nodes]['error'] < 1e-5, marginals[nodes]['error'] # less than tolerance
-    
-    cost, cost_list = asymmetric_cost(data_processor, max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)), rho=1.0, aprox="balanced", debiasing=True)
+        assert marginals[nodes]["error"] < 1e-5, marginals[nodes][
+            "error"
+        ]  # less than tolerance
+
+    cost, cost_list = asymmetric_cost(
+        data_processor,
+        max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
+        rho=1.0,
+        aprox="balanced",
+        debiasing=True,
+    )
 
     # since balanced and equal weighting on all nodes the costs should be equal
     for k in cost_list:
@@ -353,15 +389,18 @@ def test_marginals_asym_bary_with_different_grid_uniform_density_with_debiasing(
         (12, 11, 3, 9, 9, 2.0, "tuple"),
     ],
 )  # noqa: E501
-def test_marginals_asym_bary_with_all_different_grids_with_debiasing(n1, n2, members, m1, m2, L, grid_type):
+def test_marginals_asym_bary_with_all_different_grids_with_debiasing(
+    n1, n2, members, m1, m2, L, grid_type
+):
 
-    np.random.seed(n1*n2*members*m1*m2)
+    np.random.seed(n1 * n2 * members * m1 * m2)
 
     if grid_type == "flat":
         data = []
         for m in range(members):
             X = torch.cartesian_prod(
-                torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members))
+                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
             ).type(torch.DoubleTensor)
             data.append([None, X])  # uniform density, grid will equal everywhere
 
@@ -373,7 +412,9 @@ def test_marginals_asym_bary_with_all_different_grids_with_debiasing(n1, n2, mem
         for m in range(members):
             X = torch.stack(
                 torch.meshgrid(
-                    torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)), indexing="ij"
+                    torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                    torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+                    indexing="ij",
                 ),
                 dim=-1,
             ).type(torch.DoubleTensor)
@@ -387,11 +428,13 @@ def test_marginals_asym_bary_with_all_different_grids_with_debiasing(n1, n2, mem
     elif grid_type == "tuple":
         data = []
         for m in range(members):
-            X = (torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)))
+            X = (
+                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+            )
             data.append([None, X])
         Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
 
-    
     # generate the barycentre dataprocessor class which will store all objects
     # of interest. It will also create the correct graph, and given no density of graphs
     # will create uniform densities on the grids
@@ -408,7 +451,7 @@ def test_marginals_asym_bary_with_all_different_grids_with_debiasing(n1, n2, mem
             tol=1e-6,
             epsilon_annealing=False,
             debiasing=True,
-            verbose=True
+            verbose=True,
         )
     )
 
@@ -416,19 +459,23 @@ def test_marginals_asym_bary_with_all_different_grids_with_debiasing(n1, n2, mem
     marginals = ot_marginals(
         data_processor,
         epsilon=max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
-        debiasing=False
+        debiasing=False,
     )
 
     for node in data_processor.graph.nodes():
-        assert marginals[node]['marginal'].sum().item() - 1.0 < 1e-5, marginals[node]['marginal'].sum().item() # less than tolerance
+        assert marginals[node]["marginal"].sum().item() - 1.0 < 1e-5, (
+            marginals[node]["marginal"].sum().item()
+        )  # less than tolerance
 
     for nodes in data_processor.graph.nodes():
         # relax tolerance because it was not converging very fast for this debiased setting?
-        assert marginals[nodes]['error'] < 1e-5, marginals[nodes]['error'] # less than tolerance
+        assert marginals[nodes]["error"] < 1e-5, marginals[nodes][
+            "error"
+        ]  # less than tolerance
 
     # I'm not sure what test I can have for the cost, unless looking at dual primal convergence.
     # ToDo: Duality gap test?
-   
+
 
 @pytest.mark.parametrize(
     "n1, n2, members, m1, m2, L, grid_type",
@@ -438,15 +485,18 @@ def test_marginals_asym_bary_with_all_different_grids_with_debiasing(n1, n2, mem
         (12, 11, 3, 9, 9, 2.0, "tuple"),
     ],
 )  # noqa: E501
-def test_marginals_asym_bary_with_all_different_grids_without_debiasing(n1, n2, members, m1, m2, L, grid_type):
+def test_marginals_asym_bary_with_all_different_grids_without_debiasing(
+    n1, n2, members, m1, m2, L, grid_type
+):
 
-    np.random.seed(n1*n2*members*m1*m2)
+    np.random.seed(n1 * n2 * members * m1 * m2)
 
     if grid_type == "flat":
         data = []
         for m in range(members):
             X = torch.cartesian_prod(
-                torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members))
+                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
             ).type(torch.DoubleTensor)
             data.append([None, X])  # uniform density, grid will equal everywhere
 
@@ -458,7 +508,9 @@ def test_marginals_asym_bary_with_all_different_grids_without_debiasing(n1, n2, 
         for m in range(members):
             X = torch.stack(
                 torch.meshgrid(
-                    torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)), indexing="ij"
+                    torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                    torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+                    indexing="ij",
                 ),
                 dim=-1,
             ).type(torch.DoubleTensor)
@@ -472,11 +524,13 @@ def test_marginals_asym_bary_with_all_different_grids_without_debiasing(n1, n2, 
     elif grid_type == "tuple":
         data = []
         for m in range(members):
-            X = (torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)))
+            X = (
+                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+            )
             data.append([None, X])
         Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
 
-    
     # generate the barycentre dataprocessor class which will store all objects
     # of interest. It will also create the correct graph, and given no density of graphs
     # will create uniform densities on the grids
@@ -501,15 +555,19 @@ def test_marginals_asym_bary_with_all_different_grids_without_debiasing(n1, n2, 
     marginals = ot_marginals(
         data_processor,
         epsilon=max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
-        debiasing=False
+        debiasing=False,
     )
 
     for node in data_processor.graph.nodes():
-        assert marginals[node]['marginal'].sum().item() - 1.0 < 1e-5, marginals[node]['marginal'].sum().item() # less than tolerance
+        assert marginals[node]["marginal"].sum().item() - 1.0 < 1e-5, (
+            marginals[node]["marginal"].sum().item()
+        )  # less than tolerance
 
     for nodes in data_processor.graph.nodes():
         # relax tolerance because it was not converging very fast for this debiased setting?
-        assert marginals[nodes]['error'] < 1e-5, marginals[nodes]['error'] # less than tolerance
+        assert marginals[nodes]["error"] < 1e-5, marginals[nodes][
+            "error"
+        ]  # less than tolerance
 
     # I'm not sure what test I can have for the cost, unless looking at dual primal convergence.
     # ToDo: Duality gap test?

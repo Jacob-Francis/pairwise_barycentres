@@ -7,6 +7,7 @@ import networkx as nx
 
 torch.set_printoptions(precision=8)
 
+
 @pytest.mark.parametrize(
     "n1, n2, L, grid_type",
     [
@@ -27,9 +28,8 @@ def test_class_with_error_grid(n1, n2, L, grid_type):
                 torch.linspace(0, L, n1), torch.linspace(0, L, n2), indexing="ij"
             ),
             dim=-1,
-        ).type(torch.DoubleTensor) 
+        ).type(torch.DoubleTensor)
         X = X[:, :, 0]
-  
 
     data_dict = {}
     edges = [(1, 2), (2, 3), (3, 4)]
