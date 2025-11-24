@@ -1,9 +1,10 @@
+import numpy
 from .pykeops_formulaes import alpha_reduction_pykeops
 import torch
 from graph_dp import SinkhornDataProcessor
 from .utils import aprox_lse_update, alpha_reduction
 import networkx as nx
-
+import numpy as np
 
 def graph_creator_from_edges_and_weights(edges, weights=None):
     import networkx as nx
@@ -154,10 +155,6 @@ def mmuot_sinkhorn_loop(dp: SinkhornDataProcessor,
     # Depth first traversal to do reductions
     dfs_edges = list(nx.dfs_tree(dp.graph, source=v0).edges)
     
-    # checking order
-    print("DFS edges order: ", dfs_edges)
-    print("Reversed DFS edges order: ", list(reversed(dfs_edges)), 'can j appear more than once?')
-
     # First initialisation of alphas'
     # ToDo: do i save internally inside alpha reduction?
     for p_j, j in reversed(dfs_edges):
@@ -167,12 +164,18 @@ def mmuot_sinkhorn_loop(dp: SinkhornDataProcessor,
     while count < max_iterations and err > tol:
         err = -torch.inf
         
+        # root node isn't enforces when going over edges
+        # Sinkhorn update (including aprox relaxation)
+        dp.data_dict[v0]['f'], er = sinkhorn_update(dp, v0, epsilon, rho, aprox=aprox, prod=prod)
+        err = max(err, er)
+
         for p_j, j in dfs_edges:
             # update alpha
             if j != v0:
                 dp.data_dict[(j, p_j)]['alpha'] = alpha_reduction(dp, j, p_j, epsilon, prod=prod)
+            
             # Sinkhorn update (including aprox relaxation)
-            dp.data_dict[j]['f'], er = sinkhorn_update(dp, j, epsilon, rho, aprox=aprox)
+            dp.data_dict[j]['f'], er = sinkhorn_update(dp, j, epsilon, rho, aprox=aprox, prod=prod)
 
             err = max(err, er)
         
@@ -186,7 +189,8 @@ def mmuot_sinkhorn_loop(dp: SinkhornDataProcessor,
             convergence_tracking.append(err.item())
         
         if verbose:
-            print(f"Iteration {count}, Error: {err}")
+            _, e = mmuot_marginal_j(dp, j, epsilon, prod=prod, update_alpha=False)
+            print(f"Iteration {count}, Error: {err}, Mar' Err: {e}")
 
     return dp
 
@@ -201,10 +205,12 @@ def mmuot_marginal_j(dp: SinkhornDataProcessor, j, epsilon, prod=True, update_al
         marginal *= dp.data_dict[(j, i)]['alpha']
     
     if prod:
-        marginal = torch.exp(-dp.data_dict[j]['f']/epsilon) * marginal * dp.data_dict[j]['density']
+        marginal = torch.exp(dp.data_dict[j]['f']/epsilon) * marginal * dp.data_dict[j]['density']
+        print('sums', marginal.sum(), dp.data_dict[j]['density'].sum())
     else:
-        marginal = torch.exp((dp.data_dict[j]['f'])/epsilon) * marginal
+        marginal = torch.exp((dp.data_dict[j]['f'])/epsilon) * marginal / np.prod(dp.data_dict[j]['f'].shape)
     
+    # print('SUMs',/ marginal.sum(), dp.data_dict[j]['density'].sum())
     # marginal errror
     err = torch.linalg.norm(
         marginal.view(-1) - dp.data_dict[j]['density'].view(-1), ord=float("inf")
@@ -212,13 +218,13 @@ def mmuot_marginal_j(dp: SinkhornDataProcessor, j, epsilon, prod=True, update_al
 
     return marginal, err
 
-def mmuot_marginals(dp: SinkhornDataProcessor, epsilon, prod=True):
+def mmuot_marginals(dp: SinkhornDataProcessor, epsilon, prod=True, alpha_update=False):
     
     marginals = {}
     errors = {}
 
     for j in dp.graph.nodes:
-        marginals[j], errors[j] = mmuot_marginal_j(dp, j, epsilon, prod=prod)
+        marginals[j], errors[j] = mmuot_marginal_j(dp, j, epsilon, prod=prod, update_alpha=alpha_update)
     
     return marginals, errors
 

@@ -1,6 +1,6 @@
 import pytest
 import torch
-from mmuot import alpha_reduction, generate_mmuotdataprocessor_star_graph, sinkhorn_update
+from mmuot import alpha_reduction, generate_mmuotdataprocessor_star_graph, sinkhorn_update, mmuot_sinkhorn_loop, mmuot_marginals
 import numpy as np
 import networkx as nx
 
@@ -338,6 +338,360 @@ def test_alpha_reduction_with_different_grid_random_density_prod_true(n1, n2, m1
     assert torch.allclose(
         f2.view(-1), f.view(-1), atol=1e-8
     ), "Sinkhorn update failed"
+
+
+
+
+# ------------------------------------------------------------------------------
+#          TESTING MARGINALS CONVERGENCE
+# ------------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "n1, n2, m1, m2, L, grid_type",
+    [   
+        (11, 11, 11, 11, 1.0, "flat"),
+        (11, 10, 5, 7, 0.9, "flat"),
+        (9,9, 12,14, 1.0, "flat"),
+        (8, 8, 13, 8, 3.5, "tensor"),
+        (8, 8, 8,12, 3.5, "tensor"),
+        (12, 11, 9, 9, 2.0, "tuple"),
+        (12, 11, 12, 11, 2.0, "tuple"),
+    ],
+)  # noqa: E501
+def test_marginals_and_loop_uniform_density_uniform(n1, n2, m1, m2, L, grid_type):
+
+    np.random.seed(n1*n2*m1*m2)
+    members = 2
+    # tuple toggle for torch testing
+    if grid_type == "flat":
+        data = []
+        Y = torch.cartesian_prod(
+            torch.linspace(0, L, m1), torch.linspace(0, L, m2)
+        ).type(torch.DoubleTensor)
+        density = torch.abs(torch.randn(m1*m2)) 
+        data.append([None, Y]) # central grid
+        for m in range(members): # member grids
+            X = torch.cartesian_prod(
+                torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members))
+            ).type(torch.DoubleTensor)
+            density = torch.abs(torch.randn_like(X[:,0]))
+            data.append([None, X])  # uniform density, grid will equal everywhere
+        
+    elif grid_type == "tensor":
+        data = []
+        Y = torch.stack(
+            torch.meshgrid(
+                torch.linspace(0, L, m1), torch.linspace(0, L, m2), indexing="ij"
+            ),
+            dim=-1,
+        ).type(torch.DoubleTensor)
+        density = torch.abs(torch.randn_like(Y[...,0]))
+        data.append([None, Y])  # central grid
+        for m in range(members):
+            X = torch.stack(
+                torch.meshgrid(
+                    torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)), indexing="ij"
+                ),
+                dim=-1,
+            ).type(torch.DoubleTensor)
+            density = torch.abs(torch.randn_like(X[...,0]))
+            data.append([None, X])
+        
+    elif grid_type == "tuple":
+        toggle = False
+        data = []
+        Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
+        density = torch.abs(torch.randn(m1, m2))
+        data.append([None, Y])  # central grid
+        for m in range(members):
+            X = (torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)))
+            density = torch.abs(torch.randn(len(X[0]), len(X[1])))
+            data.append([None, X])
+        
+    # generate the barycentre dataprocessor class which will store all objects
+    # of interest. It will also create the correct graph, and given no density of graphs
+    # will create uniform densities on the grids
+    dp = generate_mmuotdataprocessor_star_graph(data, grid=None, clear_grid=False) 
+    epsilon = dp._torch_numpy_process(max(L / np.sqrt(n1 * n2), L / np.sqrt(m1 * m2))).view(-1, 1)
+
+    dp = mmuot_sinkhorn_loop(dp,
+    epsilon,
+    rho=1.0,
+    max_iterations=50,
+    tol=1e-7,
+    aprox='balanced',
+    prod=False,
+    convergence_tracking=False,
+    verbose=False,
+    )
+
+    marginals, errors = mmuot_marginals(dp, epsilon, prod=False, alpha_update=False)
+
+    print(errors)
+    for k in errors:
+        assert errors[k] < 1e-6, "Marginal did not converge sufficiently"
+
+
+@pytest.mark.parametrize(
+    "n1, n2, m1, m2, L, grid_type",
+    [   
+        (43, 42, 44, 45, 1.0, "flat"),
+        (50, 51, 52, 53, 1.0, "tuple"),
+        (50, 50, 50, 54, 1.0, "tensor"),
+        (50, 50, 50, 50, 1.0, "flat"),
+        (43, 42, 44, 45, 1.0, "flat"),
+
+    ],
+)  # noqa: E501
+def test_marginals_and_loop_random_density_uniformreference(n1, n2, m1, m2, L, grid_type):
+
+    np.random.seed(n1*n2*m1*m2)
+    members = 2
+    # tuple toggle for torch testing
+    if grid_type == "flat":
+        data = []
+        Y = torch.cartesian_prod(
+            torch.linspace(0, L, m1), torch.linspace(0, L, m2)
+        ).type(torch.DoubleTensor)
+        density = torch.abs(torch.rand(m1*m2)) 
+        data.append([density/density.sum(), Y]) # central grid
+        for m in range(members): # member grids
+            X = torch.cartesian_prod(
+                torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members))
+            ).type(torch.DoubleTensor)
+            density = torch.abs(torch.rand_like(X[:,0]))
+            data.append([density/density.sum(), X])  # uniform density, grid will equal everywhere
+        
+    elif grid_type == "tensor":
+        data = []
+        Y = torch.stack(
+            torch.meshgrid(
+                torch.linspace(0, L, m1), torch.linspace(0, L, m2), indexing="ij"
+            ),
+            dim=-1,
+        ).type(torch.DoubleTensor)
+        density = torch.abs(torch.rand_like(Y[...,0]))
+        data.append([density/density.sum(), Y])  # central grid
+        for m in range(members):
+            X = torch.stack(
+                torch.meshgrid(
+                    torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)), indexing="ij"
+                ),
+                dim=-1,
+            ).type(torch.DoubleTensor)
+            density = torch.abs(torch.rand_like(X[...,0]))
+            data.append([density/density.sum(), X])
+        
+    elif grid_type == "tuple":
+        toggle = False
+        data = []
+        Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
+        density = torch.abs(torch.rand(m1, m2))
+        data.append([density/density.sum(), Y])  # central grid
+        for m in range(members):
+            X = (torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)))
+            density = torch.abs(torch.rand(len(X[0]), len(X[1])))
+            data.append([density/density.sum(), X])
+        
+    # generate the barycentre dataprocessor class which will store all objects
+    # of interest. It will also create the correct graph, and given no density of graphs
+    # will create uniform densities on the grids
+    dp = generate_mmuotdataprocessor_star_graph(data, grid=None, clear_grid=False) 
+    epsilon = dp._torch_numpy_process(max(L / np.sqrt(n1 * n2), L / np.sqrt(m1 * m2))).view(-1, 1) /10
+
+    dp = mmuot_sinkhorn_loop(dp,
+    epsilon,
+    rho=1.0,
+    max_iterations=600,
+    tol=1e-12,
+    aprox='balanced',
+    prod=False,
+    convergence_tracking=False,
+    verbose=True,
+    )
+
+    marginals, errors = mmuot_marginals(dp, epsilon, prod=False, alpha_update=True)
+
+    print(errors)
+    for k in errors:
+        # its very hard to get down to a sufficent level of convergnece in the margianls
+        assert errors[k] < 1e-3, "Marginal did not converge sufficiently"
+
+
+@pytest.mark.parametrize(
+    "n1, n2, m1, m2, L, grid_type",
+    [   
+        (20, 20, 20, 20, 1.0, "flat"),
+        (50, 51, 52, 53, 1.0, "tuple"),
+        (50, 50, 50, 54, 1.0, "tensor"),
+        
+    ],
+)  # noqa: E501
+def test_marginals_and_loop_random_density_product_reference(n1, n2, m1, m2, L, grid_type):
+
+    np.random.seed(n1*n2*m1*m2)
+    members = 2
+    # tuple toggle for torch testing
+    if grid_type == "flat":
+        data = []
+        Y = torch.cartesian_prod(
+            torch.linspace(0, L, m1), torch.linspace(0, L, m2)
+        ).type(torch.DoubleTensor)
+        density = torch.abs(torch.rand(m1*m2)) 
+        data.append([density/density.sum(), Y]) # central grid
+        for m in range(members): # member grids
+            X = torch.cartesian_prod(
+                torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members))
+            ).type(torch.DoubleTensor)
+            density = torch.abs(torch.rand_like(X[:,0]))
+            data.append([density/density.sum(), X])  # uniform density, grid will equal everywhere
+        
+    elif grid_type == "tensor":
+        data = []
+        Y = torch.stack(
+            torch.meshgrid(
+                torch.linspace(0, L, m1), torch.linspace(0, L, m2), indexing="ij"
+            ),
+            dim=-1,
+        ).type(torch.DoubleTensor)
+        density = torch.abs(torch.rand_like(Y[...,0]))
+        data.append([density/density.sum(), Y])  # central grid
+        for m in range(members):
+            X = torch.stack(
+                torch.meshgrid(
+                    torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)), indexing="ij"
+                ),
+                dim=-1,
+            ).type(torch.DoubleTensor)
+            density = torch.abs(torch.rand_like(X[...,0]))
+            data.append([density/density.sum(), X])
+        
+    elif grid_type == "tuple":
+        toggle = False
+        data = []
+        Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
+        density = torch.abs(torch.rand(m1, m2))
+        data.append([density/density.sum(), Y])  # central grid
+        for m in range(members):
+            X = (torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)))
+            density = torch.abs(torch.rand(len(X[0]), len(X[1])))
+            data.append([density/density.sum(), X])
+        
+    # generate the barycentre dataprocessor class which will store all objects
+    # of interest. It will also create the correct graph, and given no density of graphs
+    # will create uniform densities on the grids
+    dp = generate_mmuotdataprocessor_star_graph(data, grid=None, clear_grid=False) 
+    epsilon = dp._torch_numpy_process(max(L / np.sqrt(n1 * n2), L / np.sqrt(m1 * m2))).view(-1, 1) /10
+
+    dp = mmuot_sinkhorn_loop(dp,
+    epsilon,
+    rho=1.0,
+    max_iterations=600,
+    tol=1e-12,
+    aprox='balanced',
+    prod=True,
+    convergence_tracking=False,
+    verbose=False,
+    )
+
+    marginals, errors = mmuot_marginals(dp, epsilon, prod=True, alpha_update=True)
+
+    for k in errors:
+        # print(k, errors[k])
+        # print(marginals[k].sum())
+        # print(dp.data_dict[k]['density'].sum())
+        # print(torch.norm(marginals[k]-dp.data_dict[k]['density'])/torch.norm(dp.data_dict[k]['density']))
+        # print(torch.norm(marginals[k]-dp.data_dict[k]['density'], p=1)/torch.norm(dp.data_dict[k]['density'], p=1))
+        # its very hard to get down to a sufficent level of convergnece in the margianls
+        assert errors[k] < 1e-3, "Marginal did not converge sufficiently"
+
+# @pytest.mark.parametrize(
+#     "n1, n2, m1, m2, L, grid_type",
+#     [   
+#         (20, 20, 20, 20, 1.0, "flat"),
+#         (11, 10, 5, 7, 0.9, "flat"),
+#         (9,9, 12,14, 1.0, "flat"),
+#         (8, 8, 13, 8, 3.5, "tensor"),
+#         (8, 8, 8,12, 3.5, "tensor"),
+#         (12, 11, 9, 9, 2.0, "tuple"),
+#         (12, 11, 12, 11, 2.0, "tuple"),
+#     ],
+# )  # noqa: E501
+# def test_marginals_and_loop_random_density_prod(n1, n2, m1, m2, L, grid_type):
+
+#     np.random.seed(n1*n2*m1*m2)
+#     members = 2
+#     # tuple toggle for torch testing
+#     if grid_type == "flat":
+#         data = []
+#         Y = torch.cartesian_prod(
+#             torch.linspace(0, L, m1), torch.linspace(0, L, m2)
+#         ).type(torch.DoubleTensor)
+#         density = torch.abs(torch.randn(m1*m2)) 
+#         data.append([density/density.sum(), Y]) # central grid
+#         for m in range(members): # member grids
+#             X = torch.cartesian_prod(
+#                 torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members))
+#             ).type(torch.DoubleTensor)
+#             density = torch.abs(torch.randn_like(X[:,0]))
+#             data.append([density/density.sum(), X])  # uniform density, grid will equal everywhere
+        
+#     elif grid_type == "tensor":
+#         data = []
+#         Y = torch.stack(
+#             torch.meshgrid(
+#                 torch.linspace(0, L, m1), torch.linspace(0, L, m2), indexing="ij"
+#             ),
+#             dim=-1,
+#         ).type(torch.DoubleTensor)
+#         density = torch.abs(torch.randn_like(Y[...,0]))
+#         data.append([density/density.sum(), Y])  # central grid
+#         for m in range(members):
+#             X = torch.stack(
+#                 torch.meshgrid(
+#                     torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)), indexing="ij"
+#                 ),
+#                 dim=-1,
+#             ).type(torch.DoubleTensor)
+#             density = torch.abs(torch.randn_like(X[...,0]))
+#             data.append([density/density.sum(), X])
+        
+#     elif grid_type == "tuple":
+#         toggle = False
+#         data = []
+#         Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
+#         density = torch.abs(torch.randn(m1, m2))
+#         data.append([density/density.sum(), Y])  # central grid
+#         for m in range(members):
+#             X = (torch.linspace(0, L, n1+np.random.randint(-members, members)), torch.linspace(0, L, n2+np.random.randint(-members, members)))
+#             density = torch.abs(torch.randn(len(X[0]), len(X[1])))
+#             data.append([density/density.sum(), X])
+        
+#     # generate the barycentre dataprocessor class which will store all objects
+#     # of interest. It will also create the correct graph, and given no density of graphs
+#     # will create uniform densities on the grids
+#     dp = generate_mmuotdataprocessor_star_graph(data, grid=None, clear_grid=False) 
+#     epsilon = dp._torch_numpy_process(max(L / np.sqrt(n1 * n2), L / np.sqrt(m1 * m2))).view(-1, 1)
+
+#     dp = mmuot_sinkhorn_loop(dp,
+#     epsilon/10,
+#     rho=1.0,
+#     max_iterations=100,
+#     tol=1e-7,
+#     aprox='balanced',
+#     prod=True,
+#     convergence_tracking=False,
+#     verbose=True,
+#     )
+
+#     marginals, errors = mmuot_marginals(dp, epsilon, prod=True, alpha_update=False)
+
+#     print(errors)
+#     for k in errors:
+#         assert errors[k] < 1e-6, "Marginal did not converge sufficiently"
+
+# ------------------------------------------------------------------------------
+#          TESTING COST CONVERGNCE?
+# ------------------------------------------------------------------------------
 
 
 
