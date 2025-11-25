@@ -74,15 +74,18 @@ def chizat_proxdiv_step(s, epsilon, rho, p, aprox="kl", u=None):
 
 
 def _dual_cost_data_term(a, data, aprox, epsilon, rho):
+    assert a.shape == data.shape, "Shapes of a and data should match"
+
     if aprox == "kl":
-        return -rho * torch.sum(
+        return torch.sum(torch.where(data > 0, -rho * (
             (a ** (-epsilon / rho) - 1) * data
-        )  # I'm worried we might get instabilities here
+        ) ,  torch.zeros_like(data)))
     elif aprox == "balanced":
-        return rho * torch.sum(epsilon * torch.log(a) * data)
+        print('shapes', a.shape, data.shape)
+        return torch.sum(torch.where(data > 0, rho * (epsilon * torch.log(a) * data),  torch.zeros_like(data)))
     elif aprox == "tv":
-        assert epsilon * torch.log(a) <= rho, "a should be less than rho for tv aprox"
-        return torch.sum(rho * (-torch.maximum(-epsilon * torch.log(a), -rho)) * data)
+        assert (epsilon * torch.log(torch.where(data > 0, a, torch.ones_like(a))) <= rho).all(), "a should be less than rho for tv aprox"
+        return torch.sum(torch.where(data > 0, rho * (-torch.maximum(-epsilon * torch.log(a), -rho)) * data, torch.zeros_like(data)))
     else:
         raise NotImplementedError("Only kl and balanced aprox implemented")
 
@@ -144,12 +147,12 @@ def graph_creator_from_edges_and_weights(edges, weights=None):
 def generate_barycentredataprocessor(
     data, barycentre_grid, grid=None, weights=None, cuda_device=None
 ):
-    # Data should be arranged as a list of lists
-    # i.e. data[i] = [density, grid]
-    # the grid and density could be [None, None]
+    """ # Data should be arranged as a list of lists
+        # i.e. data[i] = [density, grid]
+        # the grid and density could be [None, None]
 
-    # barycentre can be equal to grid - it makes things more simple
-
+        # barycentre can be equal to grid - it makes things more simple
+    """
     # Build graph
     M = len(data)
     edges = []
