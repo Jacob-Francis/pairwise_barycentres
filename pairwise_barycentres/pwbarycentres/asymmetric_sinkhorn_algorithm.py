@@ -110,11 +110,21 @@ def asymmetric_sinkhorn_algorithm(
 
         count_iterates += 1
 
+        # This will always reach the correct epsilon eventually
+        # as tol is increased before reevaluting the while loop
         if epsilon_annealing:
-            if err_barycentres < tol:
+            if err_barycentres < tol and count_epsilon < len(epsilon_list) - 1:
                 count_epsilon += 1
                 eps = epsilon_list[count_epsilon].view(-1, 1)
                 err_barycentres = tol + 1.0  # reset to continue
+                if verbose:
+                    print(
+                        f"Sinkhorn reached tolerance for epsilon {eps.item():.4e}, continuing to epsilon {epsilon_list[count_epsilon].item():.4e}"
+                    )
+            if count_epsilon == len(epsilon_list) - 1:
+                # at final epsilon so turn off annealing
+                epsilon_annealing = False
+                eps = epsilon.view(-1, 1)
 
     if verbose:
         print(
@@ -371,7 +381,7 @@ def _asymmetric_individual_edge_cost(dp, edge, epsilon, rho, aprox, debiasing):
         a, dp.data_dict[data_node]["density"], aprox, epsilon, rho
     )
     term2 = _dual_cost_data_term(
-        a, dp.data_dict[data_node]["density"], "balanced", epsilon, rho
+        b, dp.data_dict[bary_node]["density"], "balanced", epsilon, rho
     )
     term3 = calculate_node_marginal(dp, bary_node, epsilon, debiasing)[0].sum()
 
@@ -443,10 +453,6 @@ def _calculate_debiasing_potential_symmetric_term(d, dp, node, epsilon):
     we can hack the marginal reductions for find the cost constant summation <K>
     by using ones vectors for ai and bj
     """
-
-    print("Node for debiasing term:", node)
-    print(dp.data_dict[node].keys())
-    print(dp.data_dict[0].keys())
 
     if "x1x1" in dp.data_dict[node] and "x2x2" in dp.data_dict[node]:
         # we can tensorise
