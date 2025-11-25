@@ -55,7 +55,7 @@ def tv_proxdiv(s, epsilon, rho, p, u=None):
         u = 0.0
     return torch.min(
         torch.exp((rho - u) / epsilon),
-        torch.max(torch.exp((-rho + u) / epsilon), p / s),
+        torch.max(torch.exp((-rho - u) / epsilon), p / s),
     )
 
 
@@ -81,7 +81,6 @@ def _dual_cost_data_term(a, data, aprox, epsilon, rho):
             (a ** (-epsilon / rho) - 1) * data
         ) ,  torch.zeros_like(data)))
     elif aprox == "balanced":
-        print('shapes', a.shape, data.shape)
         return torch.sum(torch.where(data > 0, rho * (epsilon * torch.log(a) * data),  torch.zeros_like(data)))
     elif aprox == "tv":
         assert (epsilon * torch.log(torch.where(data > 0, a, torch.ones_like(a))) <= rho).all(), "a should be less than rho for tv aprox"
