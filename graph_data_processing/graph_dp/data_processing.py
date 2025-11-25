@@ -74,15 +74,23 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
 
         # Useful attributes
         self.num_of_edges = len(self.graph.edges)
+        
 
         self.process_graph_weights()
 
     def process_graph_weights(self):
         # Ensure weight on correct device
         for edge in self.graph.edges:
-            self.graph[edge[0]][edge[1]]["weight"] = self._torch_numpy_process(
-                self.graph[edge[0]][edge[1]]["weight"]
-            ).view(-1, 1)
+            if "weight" not in self.graph[edge[0]][edge[1]]:
+                self.graph[edge[0]][edge[1]]["weight"] = self._torch_numpy_process(
+                    torch.tensor(1.0/self.num_of_edges).type(
+                    self.dtype
+                )
+                ).view(-1, 1)
+            else:
+                self.graph[edge[0]][edge[1]]["weight"] = self._torch_numpy_process(
+                    self.graph[edge[0]][edge[1]]["weight"]
+                ).view(-1, 1)
 
     def _process_grids(self, edge, grid1, grid2):
         """
