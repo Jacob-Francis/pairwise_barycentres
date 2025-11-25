@@ -70,7 +70,7 @@ def asymmetric_sinkhorn_algorithm(
 
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[1]
-            new_b = sinkhorn_update(dp, edge[0], edge, eps, rho, aprox)
+            new_b = sinkhorn_update(dp, edge[1], edge, eps, rho, aprox)
             # calculate quasi convergnece
             err_potentials = max(
                 err_potentials,
@@ -92,7 +92,7 @@ def asymmetric_sinkhorn_algorithm(
         # project on second edge corresponding to the barycentre
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[0]
-            new_a = sinkhorn_update(dp, edge[1], edge, eps, rho, aprox="balanced")
+            new_a = sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced")
             # calculate quasi convergnece
             err_potentials = max(
                 err_potentials,
@@ -159,6 +159,14 @@ def _tensorised_sinkhorn_reduction(a, x1y1, x2y2, epsilon):
 
 
 def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon):
+    """
+    
+    
+    :param dp: Description
+    :param k: Description
+    :param edge: Description
+    :param epsilon: Description
+    """
     assert k in edge
 
     # Can I tensorise?
@@ -216,20 +224,24 @@ def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
 def sinkhorn_update(dp, k, edge, epsilon, rho, aprox):
     """
 
-    Given index k and edge (k,j) or (j,k) perform the reduction again the index k
+    Wanted behaviour: given node k and edge (k,j) or (j,k) perform the reduction 
+    to the node k. To summing against j
+
+    old behvaiour: Given index k and edge (k,j) or (j,k) perform the reduction again the index k
     meaning the output with be 'on' node j.
 
     """
 
     assert k in edge
 
-    s = _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon)
+    #  reduction across the opposite potential
+    s = _chizat_reduction_for_sinkhorn(dp, edge[1] if k == edge[0] else edge[0], edge, epsilon)
 
     return chizat_proxdiv_step(
         s,
         epsilon,
         rho,
-        dp.data_dict[edge[1] if edge[0] == k else edge[0]]["density"],
+        dp.data_dict[k]["density"],
         aprox=aprox,
     )
 
