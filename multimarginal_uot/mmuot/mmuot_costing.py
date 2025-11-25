@@ -22,7 +22,6 @@ def mmuot_marginal_j(
             * marginal
             * dp.data_dict[j]["density"]
         )
-        print("sums", marginal.sum(), dp.data_dict[j]["density"].sum())
     else:
         marginal = (
             torch.exp((dp.data_dict[j]["f"]) / epsilon)
@@ -30,7 +29,6 @@ def mmuot_marginal_j(
             / np.prod(dp.data_dict[j]["f"].shape)
         )
 
-    # print('SUMs',/ marginal.sum(), dp.data_dict[j]['density'].sum())
     # marginal errror
     err = torch.linalg.norm(
         marginal.view(-1) - dp.data_dict[j]["density"].view(-1), ord=float("inf")
@@ -65,10 +63,12 @@ def mmuot_dual_cost(
 
     # entropy term
     # - epsilon < exp(sum f ) -1, K>: ToDo: do i need the <K>? cause its expensive to calculate
-    marginal = marginal_j(
+    marginal, _ = mmuot_marginal_j(
         dp, list(dp.graph.nodes)[0], epsilon, prod=prod, update_alpha=False
     )
 
-    dual_cost -= epsilon * marginal
+    print('DUAL COST MARGINAL SUM', marginal.sum().item())
+
+    dual_cost -= epsilon.item() * marginal.sum().item()
 
     return dual_cost

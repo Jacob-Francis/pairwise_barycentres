@@ -133,7 +133,7 @@ def sinkhorn_update(
         temp = -epsilon * torch.log(temp)
     else:
         temp = epsilon * torch.log(dp.data_dict[j]["density"]) - epsilon * torch.log(
-            temp
+            temp / np.prod(dp.data_dict[j]["f"].shape)
         )
 
     # pointwise aprox;
@@ -189,6 +189,7 @@ def mmuot_sinkhorn_loop(
         dp.data_dict[v0]["f"], er = sinkhorn_update(
             dp, v0, epsilon, rho, aprox=aprox, prod=prod
         )
+
         err = max(err, er)
 
         for p_j, j in dfs_edges:
@@ -217,7 +218,7 @@ def mmuot_sinkhorn_loop(
             convergence_tracking.append(err.item())
 
         if verbose:
-            _, e = mmuot_marginal_j(dp, j, epsilon, prod=prod, update_alpha=False)
-            print(f"Iteration {count}, Error: {err}, Mar' Err: {e}")
+            marginal, e = mmuot_marginal_j(dp, j, epsilon, prod=prod, update_alpha=False)
+            print(f"Iteration {count}, Error: {err}, Mar' Err: {e}, sum f: {dp.data_dict[j]['density'].sum().item()}, marginal sum: {marginal.sum().item()}")
 
     return dp
