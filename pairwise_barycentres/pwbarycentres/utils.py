@@ -73,6 +73,44 @@ def chizat_proxdiv_step(s, epsilon, rho, p, aprox="kl", u=None):
         raise NotImplementedError("Only kl and balanced aprox implemented")
 
 
+def kl_log_aprox(s, epsilon, rho, p):
+    """_summary_
+
+    Parameters
+    ----------
+    s : _type_
+        Reduction term`
+    epsilon : _type_
+        _description_
+    rho : _type_
+        _description_
+    p : _type_
+        data term 
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    return  torch.where(p>0, (s/epsilon - torch.log(p)) * epsilon*rho/(epsilon + rho), s)
+
+def balanced_log_aprox(s, epsilon, rho, p):
+    return torch.where(p>0, s - epsilon*torch.log(p), s)
+
+def log_aprox_step(s, epsilon, rho, p, aprox="kl"):
+    """
+    u is for kernel truncation purposes which may be useful later
+    """
+    if aprox == "kl":
+        return kl_log_aprox(s, epsilon, rho, p)
+    elif aprox == "balanced":
+        return balanced_log_aprox(s, epsilon, rho, p)
+    elif aprox == "tv":
+        raise NotImplementedError("Only kl and balanced aprox implemented")
+    else:
+        raise NotImplementedError("Only kl and balanced aprox implemented")
+
+
 def _dual_cost_data_term(a, data, aprox, epsilon, rho):
     assert a.shape == data.shape, "Shapes of a and data should match"
 
@@ -130,6 +168,13 @@ def tensorise_f(C1, C2, f):
     )
 
 
+def _tensorised_sinkhorn_reduction(a, x1y1, x2y2, epsilon):
+
+    # kernel computations - K @ a
+    # main bottle neck
+    return tensorise_f(torch.exp(-x1y1 / epsilon), torch.exp(-x2y2 / epsilon), a)
+
+
 def graph_creator_from_edges_and_weights(edges, weights=None):
     import networkx as nx
 
@@ -144,7 +189,7 @@ def graph_creator_from_edges_and_weights(edges, weights=None):
 
 #
 def generate_barycentredataprocessor(
-    data, barycentre_grid, grid=None, weights=None, cuda_device=None
+    data, barycentre_grid, grid=None, weights=None, cuda_device=None, potentials="a"
 ):
     """ # Data should be arranged as a list of lists
         # i.e. data[i] = [density, grid]
@@ -173,7 +218,7 @@ def generate_barycentredataprocessor(
     # build data processor
 
     dp = SinkhornDataProcessor(
-        potentials="a",
+        potentials=potentials,
         data_dict=data_dict,
         graph=graph,
         free_grids=False,
@@ -194,3 +239,75 @@ def generate_barycentredataprocessor(
             del dp.data_dict[edge[1]]["grid"]
 
     return dp
+
+def generate_epsilon_list(epsilon: float, max_iterates: int) -> list:
+    epsilon_list = torch.logspace(
+        torch.log2(torch.tensor(0.5)),  # log2 of the start
+        torch.log2(epsilon.squeeze()),  # log2 of the end
+        steps=10,
+        base=2,
+    )
+
+    return epsilon_list.to(epsilon)
+
+def process_dict_for_barycentre(dp: SinkhornDataProcessor, debiasing=True):
+    """
+    Ensure that the barycentre nodes have the same density and a potential
+    """
+
+    # ToDo: check dp set up correctly
+    # I suppose we could actually slove the problem thorugh different grids in which case they'd
+    # have different grids but lets leave that for now
+    for edge1 in dp.graph.edges:
+        for edge2 in dp.graph.edges:
+            assert (
+                dp.data_dict[edge1[0]]["density"] is dp.data_dict[edge2[0]]["density"]
+            ), "Barycentre node should have the same data"
+
+    if debiasing:
+        edge2 = list(dp.graph.edges)[0]
+
+        # Need to add x1x1 x2x2 for debiasing potential term
+        if "x1y1" in dp.data_dict[edge2] and "x2y2" in dp.data_dict[edge2]:
+            # we can tensorise, so we must be able to tensorize the symmetric problem
+
+            # Does eveyone have the same grid?
+            assert edge1 != edge2
+            if dp.data_dict[edge1]["x1y1"] is dp.data_dict[edge2]["x1y1"]:
+                # then the edges are sharing a grid
+                # So assign to the firs edge barycentre node the x1x1, x2x2
+                dp.data_dict[edge2[0]]["x1x1"] = dp.data_dict[edge2]["x1y1"]
+                dp.data_dict[edge2[0]]["x2x2"] = dp.data_dict[edge2]["x2y2"]
+            else:
+                # Not eveyone shares the same grid so need to compute symmetric version
+                # it should still have a grid associated
+                grid = dp.data_dict[edge2[0]]["grid"]
+                if isinstance(grid, tuple):
+                    dp.data_dict[edge2[0]]["x1x1"], dp.data_dict[edge2[0]]["x2x2"] = (
+                        dp._cost_for_tuple(grid, grid)
+                    )
+
+                elif len(grid.shape) == 3 and len(grid.shape) == 3:
+                    n1, n2, n3 = grid.shape
+                    assert n3 == 2, "We assume 2D points"
+
+                    # Calculate cost matrices - the indexing works
+                    # because torch cdist eliminats the common axis which will have the same values.
+                    dp.data_dict[edge2[0]]["x1x1"], dp.data_dict[edge2[0]]["x2x2"] = (
+                        dp._cost_for_meshgrid(grid, grid, n1, n2, n1, n2)
+                    )
+
+            # point all barycentres to the tensorisation
+            for edges in dp.graph.edges:
+                dp.data_dict[edges[0]]["x1x1"] = dp.data_dict[edge2[0]]["x1x1"]
+                dp.data_dict[edges[0]]["x2x2"] = dp.data_dict[edge2[0]]["x2x2"]
+
+                assert (
+                    dp.data_dict[edges[0]]["x1x1"] is dp.data_dict[edge2[0]]["x1x1"]
+                ), "Barycentre nodes should share the same x1x1"
+                assert (
+                    dp.data_dict[edges[0]]["x2x2"] is dp.data_dict[edge2[0]]["x2x2"]
+                ), "Barycentre nodes should share the same x2x2"
+
+        elif "grid" in dp.data_dict[edge2[0]]:
+            pass  # we can use PyKeOps

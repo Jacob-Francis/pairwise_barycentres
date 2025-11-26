@@ -29,6 +29,37 @@ def chizat_reduction(Xi, Yj, epsilon, ai):
         ai,
     )
 
+_pykeops_log_reduction = generic_sum(
+    f"(Exp((F - IntInv(2)*SqDist(X, Y))/E)*S )",
+    "f = Vj(1)",  # Geo: 1 scalar per line
+    "F = Vi(1)",  # Geo: 1 scalar per line
+    f"X = Vi(2)",  # Geo: 2-dim
+    f"Y = Vj(2)",  # Uni: 1 scalar per line
+    "E = Pm(1)",  # parameter: 1 scalar per line
+    "S = Vi(1)",
+)
+
+
+def log_reduction(Fi, Xi, Yj, epsilon, ai):
+    """
+
+    "f = Vj(1)",  # Geo: 1 scalar per line
+    f"X = Vi(2)",  # Geo: 2-dim
+    f"Y = Vj(2)",  # Uni: 1 scalar per line
+    "E = Pm(1)",  # parameter: 1 scalar per line
+    "S = Vi(1)",
+
+
+    """
+
+    return _pykeops_log_reduction(
+        Fi,
+        Xi,
+        Yj,
+        epsilon,
+        ai,
+    )
+
 
 _pykeops_chizat_marginals = generic_sum(
     f"(Exp(( - IntInv(2)*SqDist(X, Y))/E)*S*P )",

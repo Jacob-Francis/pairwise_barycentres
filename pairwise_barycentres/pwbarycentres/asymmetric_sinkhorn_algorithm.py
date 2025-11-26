@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from graph_dp import SinkhornDataProcessor
 from .pykeops_formulas import chizat_marginals, chizat_reduction
-from .utils import chizat_proxdiv_step, tensorise_f, _dual_cost_data_term
+from .utils import chizat_proxdiv_step, tensorise_f, _dual_cost_data_term, generate_epsilon_list, process_dict_for_barycentre, _tensorised_sinkhorn_reduction
 from .marginals import (
     calculate_node_marginal,
     _tensorised_marginal_reduction,
@@ -10,15 +10,7 @@ from .marginals import (
 )
 
 
-def generate_epsilon_list(epsilon: float, max_iterates: int) -> list:
-    epsilon_list = torch.logspace(
-        torch.log2(torch.tensor(0.5)),  # log2 of the start
-        torch.log2(epsilon.squeeze()),  # log2 of the end
-        steps=10,
-        base=2,
-    )
 
-    return epsilon_list.to(epsilon)
 
 
 def asymmetric_sinkhorn_algorithm(
@@ -150,20 +142,6 @@ def asymmetric_sinkhorn_algorithm(
     return data_processor, barycentre, potential_error_list, barycentre_error_list
 
 
-def _flat_grid_sinkhorn_reduction(a, X, Y, epsilon):
-
-    # kernel computations - K @ a
-    # main bottle neck
-    return chizat_reduction(X, Y, epsilon, a)
-
-
-def _tensorised_sinkhorn_reduction(a, x1y1, x2y2, epsilon):
-
-    # kernel computations - K @ a
-    # main bottle neck
-    return tensorise_f(torch.exp(-x1y1 / epsilon), torch.exp(-x2y2 / epsilon), a)
-
-
 def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon):
     """
     
@@ -268,70 +246,6 @@ def balanced_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon):
     assert barycentre.shape == d.shape
 
     return barycentre
-
-
-def process_dict_for_barycentre(dp: SinkhornDataProcessor, debiasing=True):
-    """
-    Ensure that the barycentre nodes have the same density and a potential
-    """
-
-    # ToDo: check dp set up correctly
-    # I suppose we could actually slove the problem thorugh different grids in which case they'd
-    # have different grids but lets leave that for now
-    for edge1 in dp.graph.edges:
-        for edge2 in dp.graph.edges:
-            assert (
-                dp.data_dict[edge1[0]]["density"] is dp.data_dict[edge2[0]]["density"]
-            ), "Barycentre node should have the same data"
-
-    if debiasing:
-        edge2 = list(dp.graph.edges)[0]
-
-        # Need to add x1x1 x2x2 for debiasing potential term
-        if "x1y1" in dp.data_dict[edge2] and "x2y2" in dp.data_dict[edge2]:
-            # we can tensorise, so we must be able to tensorize the symmetric problem
-
-            # Does eveyone have the same grid?
-            assert edge1 != edge2
-            if dp.data_dict[edge1]["x1y1"] is dp.data_dict[edge2]["x1y1"]:
-                # then the edges are sharing a grid
-                # So assign to the firs edge barycentre node the x1x1, x2x2
-                dp.data_dict[edge2[0]]["x1x1"] = dp.data_dict[edge2]["x1y1"]
-                dp.data_dict[edge2[0]]["x2x2"] = dp.data_dict[edge2]["x2y2"]
-            else:
-                # Not eveyone shares the same grid so need to compute symmetric version
-                # it should still have a grid associated
-                grid = dp.data_dict[edge2[0]]["grid"]
-                if isinstance(grid, tuple):
-                    dp.data_dict[edge2[0]]["x1x1"], dp.data_dict[edge2[0]]["x2x2"] = (
-                        dp._cost_for_tuple(grid, grid)
-                    )
-
-                elif len(grid.shape) == 3 and len(grid.shape) == 3:
-                    n1, n2, n3 = grid.shape
-                    assert n3 == 2, "We assume 2D points"
-
-                    # Calculate cost matrices - the indexing works
-                    # because torch cdist eliminats the common axis which will have the same values.
-                    dp.data_dict[edge2[0]]["x1x1"], dp.data_dict[edge2[0]]["x2x2"] = (
-                        dp._cost_for_meshgrid(grid, grid, n1, n2, n1, n2)
-                    )
-
-            # point all barycentres to the tensorisation
-            for edges in dp.graph.edges:
-                dp.data_dict[edges[0]]["x1x1"] = dp.data_dict[edge2[0]]["x1x1"]
-                dp.data_dict[edges[0]]["x2x2"] = dp.data_dict[edge2[0]]["x2x2"]
-
-                assert (
-                    dp.data_dict[edges[0]]["x1x1"] is dp.data_dict[edge2[0]]["x1x1"]
-                ), "Barycentre nodes should share the same x1x1"
-                assert (
-                    dp.data_dict[edges[0]]["x2x2"] is dp.data_dict[edge2[0]]["x2x2"]
-                ), "Barycentre nodes should share the same x2x2"
-
-        elif "grid" in dp.data_dict[edge2[0]]:
-            pass  # we can use PyKeOps
-
 
 def asymmetric_cost(
     dp: SinkhornDataProcessor,
@@ -465,6 +379,12 @@ def _calculate_dual_cost_constant(dp, edge, epsilon, debiasing):
 
     return cost_constant.sum()
 
+
+def _flat_grid_sinkhorn_reduction(a, X, Y, epsilon):
+
+    # kernel computations - K @ a
+    # main bottle neck
+    return chizat_reduction(X, Y, epsilon, a)
 
 def _calculate_debiasing_potential_symmetric_term(d, dp, node, epsilon):
     """
