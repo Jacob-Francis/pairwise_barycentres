@@ -49,6 +49,8 @@ def asymmetric_sinkhorn_algorithm(
         epsilon_list = generate_epsilon_list(epsilon, max_iterates)
         count_epsilon = 0
         eps = epsilon_list[count_epsilon].view(-1, 1)
+        print('Epsilon annealing: Beta version, needs some tuning')
+        # raise Warning("There appears to be some weird implementation errors which need fixing")
     else:
         eps = epsilon.view(-1, 1)
         count_epsilon = None
@@ -113,7 +115,8 @@ def asymmetric_sinkhorn_algorithm(
         # This will always reach the correct epsilon eventually
         # as tol is increased before reevaluting the while loop
         if epsilon_annealing:
-            if err_barycentres < tol and count_epsilon < len(epsilon_list) - 1:
+            # converge to a lower tolerance
+            if err_barycentres < tol*10 and count_epsilon < len(epsilon_list) - 1:
                 count_epsilon += 1
                 eps = epsilon_list[count_epsilon].view(-1, 1)
                 err_barycentres = tol + 1.0  # reset to continue
@@ -121,10 +124,13 @@ def asymmetric_sinkhorn_algorithm(
                     print(
                         f"Sinkhorn reached tolerance for epsilon {eps.item():.4e}, continuing to epsilon {epsilon_list[count_epsilon].item():.4e}"
                     )
-            if count_epsilon == len(epsilon_list) - 1:
+            if count_epsilon == len(epsilon_list) - 1 or count_iterates > max_iterates // 2:
                 # at final epsilon so turn off annealing
+                # If given half the iterates switch 
                 epsilon_annealing = False
                 eps = epsilon.view(-1, 1)
+                if verbose:
+                    print('Finishing annealing at count_iterates ', count_iterates)
 
     if verbose:
         print(
