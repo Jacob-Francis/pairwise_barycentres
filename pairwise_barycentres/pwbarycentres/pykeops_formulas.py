@@ -94,13 +94,4 @@ def chizat_marginals(Xi, Yj, epsilon, ai, bj):
 
 
 if __name__ == "__main__":
-    # test chizat_reduction
-    import torch
-
-    Xi = torch.tensor([[0.0, 0.0], [1.0, 1.0]])
-    Yj = torch.tensor([[0.0, 1.0], [1.0, 0.0]])
-    epsilon = torch.tensor([0.1])
-    ai = torch.tensor([[1.0], [2.0]])
-
-    result = chizat_reduction(Xi, Yj, epsilon, ai)
-    print("Chizat reduction result:", result)
+    pass

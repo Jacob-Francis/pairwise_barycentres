@@ -1,24 +1,16 @@
 import torch
 import numpy as np
 from graph_dp import SinkhornDataProcessor
-from .pykeops_formulas import chizat_marginals, chizat_reduction, log_reduction
+from .pykeops_formulas import log_reduction
 from .utils import (
-    chizat_proxdiv_step,
-    tensorise_f,
-    _dual_cost_data_term,
     generate_epsilon_list,
     process_dict_for_barycentre,
     _tensorised_sinkhorn_reduction,
     log_aprox_step,
 )
-from .marginals import (
-    calculate_node_marginal,
-    _tensorised_marginal_reduction,
-    _flat_grid_marginal_reduction,
-)
+
 from .asymmetric_sinkhorn_algorithm import (
     _flat_grid_sinkhorn_reduction,
-    _chizat_reduction_for_sinkhorn
 )
 
 def asymmetric_sinkhorn_log_algorithm(
@@ -35,15 +27,26 @@ def asymmetric_sinkhorn_log_algorithm(
     # shorten to pass around
     dp = data_processor
 
-    process_dict_for_barycentre(dp, debiasing=debiasing)
-
-    epsilon = dp._torch_numpy_process(epsilon)
-    rho = dp._torch_numpy_process(rho)
-
-    # Initalise the deibasing potential with barycentre shape
+        # Initalise the deibasing potential with barycentre shape
     d = dp._torch_numpy_process(torch.ones_like(dp.data_dict[0]["density"]))
     barycentre = d.clone() / d.sum()
     barycentre_old = d.clone() / d.sum()
+
+    # Preprocess dictionary for barycentre computation
+    process_dict_for_barycentre(dp, debiasing=debiasing)
+
+    if debiasing:
+        # Attach potential to the graph - all pointing to the same item
+        for edges in dp.graph.edges:
+            dp.data_dict[edges[0]]["debiased_potential"] = d
+
+        for edges in dp.graph.edges:
+            assert (
+                dp.data_dict[edges[0]]["debiased_potential"] is d
+            ), "Debiasing potential should be the same object"
+
+    epsilon = dp._torch_numpy_process(epsilon)
+    rho = dp._torch_numpy_process(rho)
 
     if epsilon_annealing:
         epsilon_list = generate_epsilon_list(epsilon, max_iterates)
@@ -73,16 +76,18 @@ def asymmetric_sinkhorn_log_algorithm(
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[1]
             new_b = log_sinkhorn_update(dp, edge[1], edge, eps, rho, aprox)
+            if torch.any(torch.isnan(new_b)) or torch.any(torch.isinf(new_b)):
+                raise ValueError("B NaN detected in sinkhorn update", new_b.sum().item(), count_iterates, edge)
             # calculate quasi convergnece
             err_potentials = max(
                 err_potentials,
-                torch.norm(new_b - dp.data_dict[edge[1]][""], p=float("inf")).item(),
+                torch.norm(new_b - dp.data_dict[edge[1]]["f"], p=float("inf")).item(),
             )
             dp.data_dict[edge[1]]["f"] = new_b
 
         # Barycentre updates and update barycentre in dictionary
         barycentre_old = barycentre.clone()
-        barycentre = balanced_barycentre_updates(dp, d, eps)
+        barycentre = balanced_log_barycentre_updates(dp, d, eps)
 
         # calcualte error to old barycentre
         err_barycentres = torch.norm(barycentre - barycentre_old, p=float("inf")).item()
@@ -95,6 +100,8 @@ def asymmetric_sinkhorn_log_algorithm(
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[0]
             new_a = log_sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced")
+            if torch.any(torch.isnan(new_a)) or torch.any(torch.isinf(new_a)):
+                raise ValueError("A NaN detected in sinkhorn update", new_a.sum().item(), count_iterates, edge)
             # calculate quasi convergnece
             err_potentials = max(
                 err_potentials,
@@ -105,6 +112,11 @@ def asymmetric_sinkhorn_log_algorithm(
         # Update debiasing potential
         if debiasing:
             d = debiasing_dual_potential_update(dp, d, barycentre, eps)
+            # Attach potential to the graph - all pointing to the same item
+            # ToDo not have to redo this every time
+            for edges in dp.graph.edges:
+                dp.data_dict[edges[0]]["debiased_potential"] = d
+
 
         # Tolerance and err_potentials or checks
         potential_error_list.append(err_potentials)
@@ -141,11 +153,7 @@ def asymmetric_sinkhorn_log_algorithm(
         )
 
     if debiasing:
-        # Attach potential to the graph - all pointing to the same item
-        for edges in dp.graph.edges:
-            dp.data_dict[edges[0]]["debiased_potential"] = d
-
-        for edges in dp.graph.edges:
+         for edges in dp.graph.edges:
             assert (
                 dp.data_dict[edges[0]]["debiased_potential"] is d
             ), "Debiasing potential should be the same object"
@@ -194,22 +202,40 @@ def _log_reduction_for_sinkhorn(dp, k, edge, epsilon, debiasing=True):
 
     # Can I tensorise?
     if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
-        return _tensorised_sinkhorn_reduction(
+        temp = _tensorised_sinkhorn_reduction(
             a if k == data_node else b,
             dp.data_dict[edge]["x1y1"],
             dp.data_dict[edge]["x2y2"],
             epsilon,
         )
+
+        # testing for NaN/inf
+        if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
+            raise ValueError("Tensorised reduction NaN/inf detected", temp.sum().item(), k, edge)
+        else:
+            print("Tensorised reduction ok", temp.sum().item(), k, edge)
+
+        return temp 
     # Otherwise PyKeOps
     elif "grid" in dp.data_dict[edge[0]] and "grid" in dp.data_dict[edge[1]]:
-
-        return _flat_grid_log_sinkhorn_reduction(
+        temp = _flat_grid_log_sinkhorn_reduction(
             dp.data_dict[k]["f"],
             dp.data_dict[bary_node]["debiased_potential"] if (debiasing and k == bary_node) else torch.ones_like(dp.data_dict[k]["f"]),
             dp.data_dict[k]["grid"],
             dp.data_dict[edge[1] if edge[0] == k else edge[0]]["grid"],
             epsilon,
         )
+
+        # testing for NaN/inf
+        if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
+            
+            print('sums', dp.data_dict[k]["f"].sum().item(),\
+                (dp.data_dict[bary_node]["debiased_potential"] if (debiasing and k == bary_node) else torch.ones_like(dp.data_dict[k]["f"])).sum().item(),
+                )
+            raise ValueError("Flat grid reduction NaN/inf detected", temp.sum().item(), k, edge)
+        else:
+            print("Flat grid reduction ok", temp.sum().item(), k, edge)
+        return temp
 
 
 def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
@@ -269,7 +295,12 @@ def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox):
         dp, edge[1] if k == edge[0] else edge[0], edge, epsilon
     )
 
-    return log_aprox_step(
+    if torch.any(torch.isnan(s)) or torch.any(torch.isinf(s)):
+        raise ValueError("log_sinkhorn_update NaN/inf detected in sinkhorn update", s.sum().item(), k, edge)
+    else:
+        print("log_sinkhorn_update reduction ok", s.sum().item(), k, edge)
+
+    temp = log_aprox_step(
         s,
         epsilon,
         rho,
@@ -277,8 +308,16 @@ def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox):
         aprox=aprox,
     )
 
+    # testing aprox step
+    if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
+        raise ValueError("log_sinkhorn_update NaN/inf detected in approx step", temp.sum().item(), k, edge)
+    else:
+        print("log_sinkhorn_update approx step ok", temp.sum().item(), k, edge)
+    
+    return temp
 
-def balanced_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon):
+
+def balanced_log_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon):
     """
     I'm not sure hoe to separate this fully from the
     dictionary structure, without creating the reductions outwise the loop?
@@ -287,9 +326,8 @@ def balanced_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon):
 
     barycentre = d.clone()
     for e1, e2, w in dp.graph.edges(data=True):
-        s = _chizat_reduction_for_sinkhorn(dp, e2, (e1, e2), epsilon)
+        s = _log_reduction_for_sinkhorn(dp, e2, (e1, e2), epsilon)
         barycentre *= s ** w["weight"]
-
     # check broadcasting is correct
     assert barycentre.shape == d.shape
 
