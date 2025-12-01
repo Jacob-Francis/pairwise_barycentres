@@ -29,7 +29,7 @@ def chizat_reduction(Xi, Yj, epsilon, ai):
         ai,
     )
 
-_pykeops_log_reduction = generic_sum(
+_pykeops_log_reduction_ii = generic_sum(
     f"(Exp((F - IntInv(2)*SqDist(X, Y))/E)*S )",
     "f = Vj(1)",  # Geo: 1 scalar per line
     "F = Vi(1)",  # Geo: 1 scalar per line
@@ -40,7 +40,7 @@ _pykeops_log_reduction = generic_sum(
 )
 
 
-def log_reduction(Fi, Xi, Yj, epsilon, ai):
+def log_reduction_ii(Fi, Xi, Yj, epsilon, ai):
     """
 
     "f = Vj(1)",  # Geo: 1 scalar per line
@@ -52,7 +52,7 @@ def log_reduction(Fi, Xi, Yj, epsilon, ai):
 
     """
 
-    return _pykeops_log_reduction(
+    return _pykeops_log_reduction_ii(
         Fi,
         Xi,
         Yj,
@@ -60,6 +60,36 @@ def log_reduction(Fi, Xi, Yj, epsilon, ai):
         ai,
     )
 
+_pykeops_log_reduction_ij = generic_sum(
+    f"(Exp((F - IntInv(2)*SqDist(X, Y))/E)*S )",
+    "f = Vj(1)",  # Geo: 1 scalar per line
+    "F = Vi(1)",  # Geo: 1 scalar per line
+    f"X = Vi(2)",  # Geo: 2-dim
+    f"Y = Vj(2)",  # Uni: 1 scalar per line
+    "E = Pm(1)",  # parameter: 1 scalar per line
+    "S = Vj(1)",
+)
+
+
+def log_reduction_ij(Fi, Xi, Yj, epsilon, aj):
+    """
+
+    "f = Vj(1)",  # Geo: 1 scalar per line
+    f"X = Vi(2)",  # Geo: 2-dim
+    f"Y = Vj(2)",  # Uni: 1 scalar per line
+    "E = Pm(1)",  # parameter: 1 scalar per line
+    "S = Vi(1)",
+
+
+    """
+
+    return _pykeops_log_reduction_ij(
+        Fi,
+        Xi,
+        Yj,
+        epsilon,
+        aj,
+    )
 
 _pykeops_chizat_marginals = generic_sum(
     f"(Exp(( - IntInv(2)*SqDist(X, Y))/E)*S*P )",

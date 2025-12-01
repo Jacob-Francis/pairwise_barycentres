@@ -73,7 +73,7 @@ def chizat_proxdiv_step(s, epsilon, rho, p, aprox="kl", u=None):
         raise NotImplementedError("Only kl and balanced aprox implemented")
 
 
-def kl_log_aprox(s, epsilon, rho, p):
+def kl_log_aprox(s, epsilon, rho, p, tol=1e-12):
     """_summary_
 
     Parameters
@@ -92,10 +92,13 @@ def kl_log_aprox(s, epsilon, rho, p):
     _type_
         _description_
     """
-    return  torch.where(p>0, (s/epsilon - torch.log(p)) * epsilon*rho/(epsilon + rho), s)
+    # ToD(o - do i return zero or s?
+    print('here', - epsilon*torch.log(p))
+    return  torch.where(p>tol, (s - epsilon*torch.log(p)) * rho/(epsilon + rho), torch.zeros_like(s))
 
-def balanced_log_aprox(s, epsilon, rho, p):
-    return torch.where(p>0, s - epsilon*torch.log(p), s)
+def balanced_log_aprox(s, epsilon, rho, p, tol=1e-12):
+    print('bal here', torch.where(p>tol, s - epsilon*torch.log(p), torch.zeros_like(s)) )
+    return torch.where(p>tol, s - epsilon*torch.log(p), torch.zeros_like(s))
 
 def log_aprox_step(s, epsilon, rho, p, aprox="kl"):
     """
@@ -174,6 +177,18 @@ def _tensorised_sinkhorn_reduction(a, x1y1, x2y2, epsilon):
     # main bottle neck
     return tensorise_f(torch.exp(-x1y1 / epsilon), torch.exp(-x2y2 / epsilon), a)
 
+def _tensorised_log_sinkhorn_reduction(f, d, ind, x1y1, x2y2, epsilon):
+    """
+    f dual potential being reduced over
+    d debiasing potential
+    ind - 0 if d and f go together (and are summed), 1 if they are opposite so d is not summed. 
+    """
+    # kernel computations - K @ a
+    # main bottle neck
+    if ind==0:
+        return tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), torch.exp(f / epsilon)*d)
+    else:
+        return d*tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), torch.exp((f) / epsilon))
 
 def graph_creator_from_edges_and_weights(edges, weights=None):
     import networkx as nx

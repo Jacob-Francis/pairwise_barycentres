@@ -1,11 +1,12 @@
 import torch
 import numpy as np
 from graph_dp import SinkhornDataProcessor
-from .pykeops_formulas import log_reduction
+from .pykeops_formulas import log_reduction_ii, log_reduction_ij
 from .utils import (
     generate_epsilon_list,
     process_dict_for_barycentre,
     _tensorised_sinkhorn_reduction,
+    _tensorised_log_sinkhorn_reduction,
     log_aprox_step,
 )
 
@@ -75,7 +76,7 @@ def asymmetric_sinkhorn_log_algorithm(
 
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[1]
-            new_b = log_sinkhorn_update(dp, edge[1], edge, eps, rho, aprox)
+            new_b = log_sinkhorn_update(dp, edge[1], edge, eps, rho, aprox, debiasing=debiasing)
             if torch.any(torch.isnan(new_b)) or torch.any(torch.isinf(new_b)):
                 raise ValueError("B NaN detected in sinkhorn update", new_b.sum().item(), count_iterates, edge)
             # calculate quasi convergnece
@@ -87,7 +88,7 @@ def asymmetric_sinkhorn_log_algorithm(
 
         # Barycentre updates and update barycentre in dictionary
         barycentre_old = barycentre.clone()
-        barycentre = balanced_log_barycentre_updates(dp, d, eps)
+        barycentre = balanced_log_barycentre_updates(dp, d, eps, debiasing=debiasing)
 
         # calcualte error to old barycentre
         err_barycentres = torch.norm(barycentre - barycentre_old, p=float("inf")).item()
@@ -99,7 +100,7 @@ def asymmetric_sinkhorn_log_algorithm(
         # project on second edge corresponding to the barycentre
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[0]
-            new_a = log_sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced")
+            new_a = log_sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced", debiasing=debiasing)
             if torch.any(torch.isnan(new_a)) or torch.any(torch.isinf(new_a)):
                 raise ValueError("A NaN detected in sinkhorn update", new_a.sum().item(), count_iterates, edge)
             # calculate quasi convergnece
@@ -163,6 +164,11 @@ def asymmetric_sinkhorn_log_algorithm(
 
 def _log_reduction_for_sinkhorn(dp, k, edge, epsilon, debiasing=True):
     """
+    Returns the reduction 
+    sum_k exp((f_k - 0.5||xk - yj||^2) / epsilon) * d_{j/k}
+
+    d is decided by debiasing flag and which node k is
+
     :param dp: Description
     :param k: Description
     :param edge: Description
@@ -177,11 +183,15 @@ def _log_reduction_for_sinkhorn(dp, k, edge, epsilon, debiasing=True):
 
     if debiasing:
         if "debiased_potential" in dp.data_dict[bary_node]:
-            b = (
-                torch.exp(dp.data_dict[bary_node]["f"]/epsilon)
-                * dp.data_dict[bary_node]["debiased_potential"]
-            )
-            a = dp.data_dict[data_node]["f"]
+            d = dp.data_dict[bary_node]["debiased_potential"]
+            if k == bary_node:
+                a = dp.data_dict[bary_node]["f"]
+                ind = 0
+            elif k == data_node:
+                a = dp.data_dict[data_node]["f"]
+                ind = 1
+            else:
+                raise ValueError("k should be either bary_node or data_node")
         elif "debiased_potential" in dp.data_dict[data_node]:
             raise Warning("No debiasing potentials should be attached to the data")
         else:
@@ -197,13 +207,23 @@ def _log_reduction_for_sinkhorn(dp, k, edge, epsilon, debiasing=True):
                 "Both nodes have debiasing potentials attached, this is unexpected behaviour"
             )
     else:
-        a = dp.data_dict[data_node]["f"]
-        b = dp.data_dict[bary_node]["f"]
+        d = torch.ones_like(dp.data_dict[bary_node]["f"])
+        if k == bary_node:
+            a = dp.data_dict[bary_node]["f"]
+            ind = 0
+        elif k == data_node:
+            a = dp.data_dict[data_node]["f"]
+            ind = 1
+        else:
+            raise ValueError("k should be either bary_node or data_node")
 
     # Can I tensorise?
     if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
-        temp = _tensorised_sinkhorn_reduction(
-            a if k == data_node else b,
+
+        temp = _tensorised_log_sinkhorn_reduction(
+            a,
+            d,
+            ind,
             dp.data_dict[edge]["x1y1"],
             dp.data_dict[edge]["x2y2"],
             epsilon,
@@ -219,8 +239,9 @@ def _log_reduction_for_sinkhorn(dp, k, edge, epsilon, debiasing=True):
     # Otherwise PyKeOps
     elif "grid" in dp.data_dict[edge[0]] and "grid" in dp.data_dict[edge[1]]:
         temp = _flat_grid_log_sinkhorn_reduction(
-            dp.data_dict[k]["f"],
-            dp.data_dict[bary_node]["debiased_potential"] if (debiasing and k == bary_node) else torch.ones_like(dp.data_dict[k]["f"]),
+            a,
+            d,
+            ind,
             dp.data_dict[k]["grid"],
             dp.data_dict[edge[1] if edge[0] == k else edge[0]]["grid"],
             epsilon,
@@ -233,8 +254,7 @@ def _log_reduction_for_sinkhorn(dp, k, edge, epsilon, debiasing=True):
                 (dp.data_dict[bary_node]["debiased_potential"] if (debiasing and k == bary_node) else torch.ones_like(dp.data_dict[k]["f"])).sum().item(),
                 )
             raise ValueError("Flat grid reduction NaN/inf detected", temp.sum().item(), k, edge)
-        else:
-            print("Flat grid reduction ok", temp.sum().item(), k, edge)
+      
         return temp
 
 
@@ -270,14 +290,21 @@ def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
 
     return torch.sqrt(d * barycentre / s)
 
-def _flat_grid_log_sinkhorn_reduction(f, d, X, Y, epsilon):
-
+def _flat_grid_log_sinkhorn_reduction(f, d, ind, X, Y, epsilon):
+    """
+    if f and d are both Vi then ind= 0
+    if f is Vi and d is Vj then ind=1
+    """
     # kernel computations - K @ a
     # main bottle neck
-    return log_reduction(f, X, Y, epsilon, d)
+    if ind ==0:
+        return log_reduction_ii(f, X, Y, epsilon, d)
+    elif ind == 1:
+        return log_reduction_ij(f, X, Y, epsilon, d)
+    
 
 
-def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox):
+def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox, debiasing):
     """
 
     Wanted behaviour: given node k and edge (k,j) or (j,k) perform the reduction
@@ -292,13 +319,12 @@ def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox):
 
     #  reduction across the opposite potential
     s = _log_reduction_for_sinkhorn(
-        dp, edge[1] if k == edge[0] else edge[0], edge, epsilon
+        dp, edge[1] if k == edge[0] else edge[0], edge, epsilon, debiasing=debiasing
     )
 
     if torch.any(torch.isnan(s)) or torch.any(torch.isinf(s)):
         raise ValueError("log_sinkhorn_update NaN/inf detected in sinkhorn update", s.sum().item(), k, edge)
-    else:
-        print("log_sinkhorn_update reduction ok", s.sum().item(), k, edge)
+
 
     temp = log_aprox_step(
         s,
@@ -311,22 +337,20 @@ def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox):
     # testing aprox step
     if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
         raise ValueError("log_sinkhorn_update NaN/inf detected in approx step", temp.sum().item(), k, edge)
-    else:
-        print("log_sinkhorn_update approx step ok", temp.sum().item(), k, edge)
     
     return temp
 
 
-def balanced_log_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon):
+def balanced_log_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon, debiasing):
     """
     I'm not sure hoe to separate this fully from the
     dictionary structure, without creating the reductions outwise the loop?
     But this would require a lot of memory. So think its better to just calcalte with the dictionary
     """
 
-    barycentre = d.clone()
+    barycentre = d.clone() # becasue we've pulled d out the front
     for e1, e2, w in dp.graph.edges(data=True):
-        s = _log_reduction_for_sinkhorn(dp, e2, (e1, e2), epsilon)
+        s = _log_reduction_for_sinkhorn(dp, e2, (e1, e2), epsilon, debiasing=False) 
         barycentre *= s ** w["weight"]
     # check broadcasting is correct
     assert barycentre.shape == d.shape
