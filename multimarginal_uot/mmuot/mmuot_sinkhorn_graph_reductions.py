@@ -20,6 +20,20 @@ def graph_creator_from_edges_and_weights(edges, weights=None):
     return G
 
 
+def generate_mmuot_debiasing_dp(data, grid, members, cuda_device, clear_grid):
+    """
+    Members does not include centre. M = N -1, for N being the number of nodes. 
+    class for calucalting the debiasing cost terms.
+    ToDo: Perform in parralell.
+    """
+
+    dlist = []
+    for k in range(members+1):
+        dlist.append([data, grid])
+
+    return generate_mmuotdataprocessor_star_graph(dlist, grid=grid, cuda_device=cuda_device, clear_grid=clear_grid)
+
+
 def generate_mmuotdataprocessor_star_graph(
     data, grid=None, weights=None, cuda_device=None, clear_grid=True
 ):
@@ -165,7 +179,7 @@ def mmuot_sinkhorn_loop(
     count = 0
 
     if convergence_tracking:
-        convergence_tracking = []
+        convergence_tracking_list = []
 
     # root node
     v0 = list(dp.graph.nodes)[0]
@@ -215,10 +229,13 @@ def mmuot_sinkhorn_loop(
         count += 1
 
         if convergence_tracking:
-            convergence_tracking.append(err.item())
+            convergence_tracking_list.append(err)
 
         if verbose:
             marginal, e = mmuot_marginal_j(dp, j, epsilon, prod=prod, update_alpha=False)
             print(f"Iteration {count}, Error: {err}, Mar' Err: {e}, sum f: {dp.data_dict[j]['density'].sum().item()}, marginal sum: {marginal.sum().item()}")
 
-    return dp
+    if convergence_tracking:
+        return dp, convergence_tracking
+    else:
+        return dp
