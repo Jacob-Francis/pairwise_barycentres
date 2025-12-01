@@ -72,3 +72,17 @@ def mmuot_dual_cost(
     dual_cost -= epsilon.item() * marginal.sum().item()
 
     return dual_cost
+
+
+def generate_mmuot_debiasing_dp(data, grid, members, cuda_device, clear_grid):
+    """
+    Members does not include centre. M = N -1, for N being the number of nodes. 
+    class for calucalting the debiasing cost terms.
+    ToDo: Perform in parralell.
+    """
+
+    dlist = []
+    for k in range(members+1):
+        dlist.append([data, grid])
+
+    return generate_mmuotdataprocessor_star_graph(dlist, grid=grid, cuda_device=cuda_device, clear_grid=clear_grid)
