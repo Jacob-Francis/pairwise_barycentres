@@ -177,6 +177,8 @@ def mmuot_sinkhorn_loop(
     # Initialisations
     err = tol + 1.0
     count = 0
+    epsilon = dp._torch_numpy_process(epsilon)
+    rho = dp._torch_numpy_process(rho)
 
     if convergence_tracking:
         convergence_tracking_list = []
@@ -236,6 +238,6 @@ def mmuot_sinkhorn_loop(
             print(f"Iteration {count}, Error: {err}, Mar' Err: {e}, sum f: {dp.data_dict[j]['density'].sum().item()}, marginal sum: {marginal.sum().item()}")
 
     if convergence_tracking:
-        return dp, convergence_tracking
+        return dp, convergence_tracking_list
     else:
         return dp
