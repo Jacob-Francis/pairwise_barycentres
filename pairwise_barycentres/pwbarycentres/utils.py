@@ -171,11 +171,18 @@ def tensorise_f(C1, C2, f):
     )
 
 
-def _tensorised_sinkhorn_reduction(a, x1y1, x2y2, epsilon):
+def _tensorised_sinkhorn_reduction(a, x1y1, x2y2, epsilon, d=None, ind=None):
 
     # kernel computations - K @ a
     # main bottle neck
-    return tensorise_f(torch.exp(-x1y1 / epsilon), torch.exp(-x2y2 / epsilon), a)
+    # return tensorise_f(torch.exp(-x1y1 / epsilon), torch.exp(-x2y2 / epsilon), a)
+    if ind==0:
+        return tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), a*d)
+    elif ind==1:
+        return d*tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), a)
+    else:
+        return tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), a)
+
 
 def _tensorised_log_sinkhorn_reduction(f, d, ind, x1y1, x2y2, epsilon):
     """

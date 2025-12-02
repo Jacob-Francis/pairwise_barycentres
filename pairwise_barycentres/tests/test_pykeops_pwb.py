@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 import torch
-from pwbarycentres import chizat_marginals, chizat_reduction, log_reduction
+from pwbarycentres import chizat_marginals, chizat_reduction, log_reduction_ij, log_reduction_ii
 import pykeops
 
 # Import the functions you provided (adjust the import path as necessary)
@@ -100,7 +100,7 @@ def test_chizat_marginal_matches_numpy(n_i, n_j, d):
     assert np.allclose(result, expected, rtol=rtol, atol=atol)
 
 @pytest.mark.parametrize("n_i,n_j,d", [(5, 7, 2), (1, 3, 2), (10, 10, 2)])
-def test_log_reduction_matches_numpy(n_i, n_j, d):
+def test_log_reduction_ii_matches_numpy(n_i, n_j, d):
 
     pykeops.clean_pykeops()
     np.random.seed(12313 + n_i + n_j)
@@ -120,12 +120,49 @@ def test_log_reduction_matches_numpy(n_i, n_j, d):
 
     # call with tensor - then detach and convert to numpy
     result = (
-        log_reduction(
+        log_reduction_ii(
             Fi=torch.tensor(Fi).view(-1, 1),
             Xi=torch.tensor(Xi),
             Yj=torch.tensor(Yj),
             epsilon=torch.tensor(epsilon).view(-1, 1),
             ai=torch.tensor(ai).view(-1, 1),
+        )
+        .detach()
+        .cpu()
+        .view(-1)
+        .numpy()
+    )
+
+    assert result.shape == expected.shape
+    assert np.allclose(result, expected, rtol=rtol, atol=atol)
+
+@pytest.mark.parametrize("n_i,n_j,d", [(5, 7, 2), (1, 3, 2), (10, 10, 2)])
+def test_log_reduction_ij_matches_numpy(n_i, n_j, d):
+
+    pykeops.clean_pykeops()
+    np.random.seed(12313 + n_i + n_j)
+    Xi = np.random.uniform(size=(n_i, d)).astype(np.float64)
+    Yj = np.random.uniform(size=(n_j, d)).astype(np.float64)
+
+    # epsilon must be positive scalar
+    epsilon = 1 / np.sqrt(n_i * n_j)
+
+    aj = np.random.rand(n_j).astype(np.float64)
+    Fi = np.random.rand(n_i).astype(np.float64)
+
+    # ---------- expected (NumPy) ----------
+    D = numpy_sqdist_matrix(Xi, Yj)
+    K = np.exp((Fi.reshape(-1, 1) - 0.5 * D) / epsilon)
+    expected = K.sum(axis=0)*aj 
+
+    # call with tensor - then detach and convert to numpy
+    result = (
+        log_reduction_ij(
+            Fi=torch.tensor(Fi).view(-1, 1),
+            Xi=torch.tensor(Xi),
+            Yj=torch.tensor(Yj),
+            epsilon=torch.tensor(epsilon).view(-1, 1),
+            aj=torch.tensor(aj).view(-1, 1),
         )
         .detach()
         .cpu()

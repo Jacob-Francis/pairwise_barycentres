@@ -167,13 +167,18 @@ def test_marginals_asym_bary_with_same_grid_uniform_density_with_debiasing(
 
     # if given no nodes then they should all be returned
     marginals = ot_marginals(
-        data_processor, epsilon=1 / np.sqrt(n1 * n2), debiasing=False
+        data_processor, epsilon=1 / np.sqrt(n1 * n2), debiasing=True
     )
+
+    # for node in data_processor.graph.nodes():
+    #     print(
+    #         node, marginals[node]["marginal"].sum().item()
+    #     )
 
     for node in data_processor.graph.nodes():
         assert marginals[node]["marginal"].sum().item() - 1.0 < 1e-5, (
             marginals[node]["marginal"].sum().item()
-        )  # less than tolerance
+        )
 
     for nodes in data_processor.graph.nodes():
         # relax tolerance because it was not converging very fast for this debiased setting?
@@ -350,7 +355,7 @@ def test_marginals_asym_bary_with_different_grid_uniform_density_with_debiasing(
     marginals = ot_marginals(
         data_processor,
         epsilon=max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
-        debiasing=False,
+        debiasing=True,
     )
 
     for node in data_processor.graph.nodes():
@@ -459,7 +464,7 @@ def test_marginals_asym_bary_with_all_different_grids_with_debiasing(
     marginals = ot_marginals(
         data_processor,
         epsilon=max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
-        debiasing=False,
+        debiasing=True,
     )
 
     for node in data_processor.graph.nodes():

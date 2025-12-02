@@ -64,7 +64,7 @@ def asymmetric_sinkhorn_algorithm(
 
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[1]
-            new_b = sinkhorn_update(dp, edge[1], edge, eps, rho, aprox)
+            new_b = sinkhorn_update(dp, edge[1], edge, eps, rho, aprox, d, debiasing=debiasing)
             # calculate quasi convergnece
             err_potentials = max(
                 err_potentials,
@@ -86,13 +86,13 @@ def asymmetric_sinkhorn_algorithm(
         # project on second edge corresponding to the barycentre
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[0]
-            new_a = sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced")
+            new_a = sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced", d=d, debiasing=debiasing)
             # calculate quasi convergnece
             err_potentials = max(
                 err_potentials,
                 torch.norm(new_a - dp.data_dict[edge[0]]["a"], p=float("inf")).item(),
             )
-            dp.data_dict[edge[0]]["a"] = new_a
+            dp.data_dict[edge[0]]["a"] = new_a # multiply by debiasing potential
 
         # Update debiasing potential
         if debiasing:
@@ -142,34 +142,103 @@ def asymmetric_sinkhorn_algorithm(
     return data_processor, barycentre, potential_error_list, barycentre_error_list
 
 
-def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon):
+# def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon):
+#     """
+    
+    
+#     :param dp: Description
+#     :param k: Description
+#     :param edge: Description
+#     :param epsilon: Description
+#     """
+#     assert k in edge
+
+#     # Can I tensorise?
+#     if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
+#         return _tensorised_sinkhorn_reduction(
+#             dp.data_dict[k]["a"],
+#             dp.data_dict[edge]["x1y1"],
+#             dp.data_dict[edge]["x2y2"],
+#             epsilon,
+#         )
+#     # Otherwise PyKeOps
+#     elif "grid" in dp.data_dict[edge[0]] and "grid" in dp.data_dict[edge[1]]:
+
+#         return _flat_grid_sinkhorn_reduction(
+#             dp.data_dict[k]["a"],
+#             dp.data_dict[k]["grid"],
+#             dp.data_dict[edge[1] if edge[0] == k else edge[0]]["grid"],
+#             epsilon,
+#         )
+
+def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon, d, debiasing=False):
     """
-    
-    
+    Returns the reduction 
+    sum_k exp((f_k - 0.5||xk - yj||^2) / epsilon) * d_{j/k}
+
+    d is decided by debiasing flag and which node k is
+
     :param dp: Description
     :param k: Description
     :param edge: Description
     :param epsilon: Description
     """
+
     assert k in edge
+
+    # Perform reduction to node k across edge with the kernel Kd or K.
+    bary_node = edge[0]
+    data_node = edge[1]
+
+    if debiasing:
+        if k == bary_node:
+            a = dp.data_dict[bary_node]["a"]
+            ind = 0
+        elif k == data_node:
+            a = dp.data_dict[data_node]["a"]
+            ind = 1
+        else:
+            raise ValueError("k should be either bary_node or data_node")
+    else:
+        assert (d == torch.ones_like(dp.data_dict[bary_node]["a"])).all()
+        if k == bary_node:
+            a = dp.data_dict[bary_node]["a"]
+            ind = 0
+        elif k == data_node:
+            a = dp.data_dict[data_node]["a"]
+            ind = 1
+        else:
+            raise ValueError("k should be either bary_node or data_node")
 
     # Can I tensorise?
     if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
-        return _tensorised_sinkhorn_reduction(
-            dp.data_dict[k]["a"],
+
+        temp = _tensorised_sinkhorn_reduction(
+            a,
             dp.data_dict[edge]["x1y1"],
             dp.data_dict[edge]["x2y2"],
             epsilon,
+            d,
+            ind,
         )
+
+        # testing for NaN/inf
+        if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
+            raise ValueError("Tensorised reduction NaN/inf detected", temp.sum().item(), k, edge)
+
+        return temp 
     # Otherwise PyKeOps
     elif "grid" in dp.data_dict[edge[0]] and "grid" in dp.data_dict[edge[1]]:
-
-        return _flat_grid_sinkhorn_reduction(
-            dp.data_dict[k]["a"],
+        temp = _flat_grid_sinkhorn_reduction(
+            a,
             dp.data_dict[k]["grid"],
             dp.data_dict[edge[1] if edge[0] == k else edge[0]]["grid"],
             epsilon,
+            d,
+            ind
         )
+
+        return temp
 
 
 def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
@@ -205,7 +274,7 @@ def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
     return torch.sqrt(d * barycentre / s)
 
 
-def sinkhorn_update(dp, k, edge, epsilon, rho, aprox):
+def sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing: bool = False):
     """
 
     Wanted behaviour: given node k and edge (k,j) or (j,k) perform the reduction 
@@ -219,7 +288,7 @@ def sinkhorn_update(dp, k, edge, epsilon, rho, aprox):
     assert k in edge
 
     #  reduction across the opposite potential
-    s = _chizat_reduction_for_sinkhorn(dp, edge[1] if k == edge[0] else edge[0], edge, epsilon)
+    s = _chizat_reduction_for_sinkhorn(dp, edge[1] if k == edge[0] else edge[0], edge, epsilon, d, debiasing=debiasing)
 
     return chizat_proxdiv_step(
         s,
@@ -239,7 +308,7 @@ def balanced_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon):
 
     barycentre = d.clone()
     for e1, e2, w in dp.graph.edges(data=True):
-        s = _chizat_reduction_for_sinkhorn(dp, e2, (e1, e2), epsilon)
+        s = _chizat_reduction_for_sinkhorn(dp, e2, (e1, e2), epsilon, d=torch.ones_like(d), debiasing=False) # because we've factored out d. 
         barycentre *= s ** w["weight"]
 
     # check broadcasting is correct
@@ -380,11 +449,16 @@ def _calculate_dual_cost_constant(dp, edge, epsilon, debiasing):
     return cost_constant.sum()
 
 
-def _flat_grid_sinkhorn_reduction(a, X, Y, epsilon):
+def _flat_grid_sinkhorn_reduction(a, X, Y, epsilon, d=None, ind=None):
 
     # kernel computations - K @ a
     # main bottle neck
-    return chizat_reduction(X, Y, epsilon, a)
+    if ind==0:
+        return chizat_reduction(X, Y, epsilon, a*d)
+    elif ind==1:
+        return d*chizat_reduction(X, Y, epsilon, a)
+    else:
+        return chizat_reduction(X, Y, epsilon, a)
 
 def _calculate_debiasing_potential_symmetric_term(d, dp, node, epsilon):
     """
