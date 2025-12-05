@@ -1,5 +1,5 @@
 from .asymmetric_sinkhorn_algorithm import Kd_dual_potential_reduction
-from .marginals  import calculate_node_marginal
+from .marginals  import calculate_node_marginal, ot_marginals
 import torch
 
 import torch
@@ -37,6 +37,18 @@ def d_constraint(d, epsilon, dp):
 
     Kd = Kd_dual_potential_reduction(dp, d, epsilon)
 
-    residual = d - sum_pi_k / Kd.view_as(d)
+    residual = d.view(-1,1) - sum_pi_k.view(-1,1)  / Kd.view(-1,1) 
 
     return torch.norm(residual, p=float('inf')), torch.norm(residual, p=1)
+
+def barycentre_constraint(barycentre, epsilon, dp, debiasing=True):
+    """ 
+    0 = sum omega f_i = sum omega epsilon log(a_{bary})
+    """
+
+    # pik_1 is the marginal on the barycentre
+    sumfi = torch.zeros_like(d)
+    for node, e2, w in dp.graph.edges(data=True):
+        sumfi += w['weight'] * epsilon * torch.log(dp.data_dict[node]['a'] + 1e-30)
+
+    return torch.norm(sumfi, p=float('inf')), torch.norm(sumfi, p=1)
