@@ -71,7 +71,7 @@ def asymmetric_sinkhorn_algorithm(
 
         # Barycentre updates and update barycentre in dictionary
         barycentre_old = barycentre.clone()
-            barycentre = balanced_barycentre_updates(dp, d, eps)
+        barycentre = balanced_barycentre_updates(dp, d, eps)
 
 
         # calcualte error to old barycentre
