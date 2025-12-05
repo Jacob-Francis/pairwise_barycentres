@@ -10,9 +10,6 @@ from .marginals import (
 )
 
 
-
-
-
 def asymmetric_sinkhorn_algorithm(
     data_processor: SinkhornDataProcessor,
     epsilon: float,
@@ -74,7 +71,8 @@ def asymmetric_sinkhorn_algorithm(
 
         # Barycentre updates and update barycentre in dictionary
         barycentre_old = barycentre.clone()
-        barycentre = balanced_barycentre_updates(dp, d, eps)
+            barycentre = balanced_barycentre_updates(dp, d, eps)
+
 
         # calcualte error to old barycentre
         err_barycentres = torch.norm(barycentre - barycentre_old, p=float("inf")).item()
@@ -103,7 +101,7 @@ def asymmetric_sinkhorn_algorithm(
         barycentre_error_list.append(err_barycentres)
 
         count_iterates += 1
-
+    
         # This will always reach the correct epsilon eventually
         # as tol is increased before reevaluting the while loop
         if epsilon_annealing:
@@ -144,8 +142,7 @@ def asymmetric_sinkhorn_algorithm(
 
 # def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon):
 #     """
-    
-    
+
 #     :param dp: Description
 #     :param k: Description
 #     :param edge: Description
@@ -210,6 +207,8 @@ def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon, d, debiasing=False):
         else:
             raise ValueError("k should be either bary_node or data_node")
 
+    # checking for zeros
+
     # Can I tensorise?
     if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
 
@@ -222,11 +221,6 @@ def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon, d, debiasing=False):
             ind,
         )
 
-        # testing for NaN/inf
-        if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
-            raise ValueError("Tensorised reduction NaN/inf detected", temp.sum().item(), k, edge)
-
-        return temp 
     # Otherwise PyKeOps
     elif "grid" in dp.data_dict[edge[0]] and "grid" in dp.data_dict[edge[1]]:
         temp = _flat_grid_sinkhorn_reduction(
@@ -238,7 +232,17 @@ def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon, d, debiasing=False):
             ind
         )
 
-        return temp
+
+    if torch.any(torch.isnan(a)) or torch.any(torch.isinf(temp)):
+        raise ValueError("Reduction input a has zero or negative values", a.min().item(),temp.sum().item(), k, edge)
+    # if torch.any(d <= 0):
+    #     raise ValueError("Reduction input d has zero or negative values", d.min().item(), temp.sum().item(),k, edge)
+
+    # testing for NaN/inf
+    if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
+        raise ValueError("Reduction NaN/inf detected", temp.sum().item(), a.min().item(), d.min().item(),k, edge)
+
+    return temp
 
 
 def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
@@ -270,6 +274,19 @@ def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
             dp.data_dict[edge[0]]["grid"],
             epsilon,
         )
+    
+    if torch.any(torch.isnan(s)) or torch.any(torch.isinf(s)):
+        raise ValueError("Debiasing reduction NaN/inf detected", s.sum().item())
+    
+    if torch.any(s <= 0):
+        raise ValueError("Debiasing reduction negative or zero values detected", s.min().item())
+    
+    # checking output
+    output = torch.sqrt(d * barycentre / s)
+    if torch.any(torch.isnan(output)) or torch.any(torch.isinf(output)):
+        raise ValueError("Debiasing potential update NaN/inf detected", output.sum().item())
+    if torch.any(output < 0):
+        raise ValueError("Debiasing potential update negative or zero values detected", output.min().item())
 
     return torch.sqrt(d * barycentre / s)
 
@@ -289,14 +306,23 @@ def sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing: bool = False
 
     #  reduction across the opposite potential
     s = _chizat_reduction_for_sinkhorn(dp, edge[1] if k == edge[0] else edge[0], edge, epsilon, d, debiasing=debiasing)
+    # check the temp is valid
+    if torch.any(torch.isnan(s)) or torch.any(torch.isinf(s)):
+        raise ValueError("Sinkhorn s  update NaN/inf detected", temp.sum().item(), s.sum().item())
 
-    return chizat_proxdiv_step(
+    temp = chizat_proxdiv_step(
         s,
         epsilon,
         rho,
         dp.data_dict[k]["density"],
         aprox=aprox,
     )
+
+    # check the temp is valid
+    if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
+        raise ValueError("Sinkhorn temp update NaN/inf detected", temp.sum().item(), s.sum().item(), aprox)
+
+    return temp
 
 
 def balanced_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon):

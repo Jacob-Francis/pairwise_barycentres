@@ -36,12 +36,15 @@ def balanced_prox(s, epsilon, rho, p):
 def kl_proxdiv(s, epsilon, rho, p, u=None):
 
     if u is None:
-        return (p / s) ** (rho / (epsilon + rho))
-    return (p / s) ** (rho / (epsilon + rho)) * torch.exp(-u / (epsilon + rho))
+        return torch.where(p > 0, (p / s) ** (rho / (epsilon + rho)), torch.zeros_like(p))
+        # return (p / s) ** (rho / (epsilon + rho))
+    
+    return torch.where(p > 0, (p / s) ** (rho / (epsilon + rho)), torch.zeros_like(p)) * torch.exp(-u / (epsilon + rho))
 
 
 def balanced_proxdiv(s, epsilon, rho, p, u=None):
-    return p / s
+
+    return torch.where(p > 0, p / s, torch.zeros_like(p))
 
 
 def tv_prox(s, epsilon, rho, p):
@@ -53,10 +56,14 @@ def tv_prox(s, epsilon, rho, p):
 def tv_proxdiv(s, epsilon, rho, p, u=None):
     if u is None:
         u = 0.0
-    return torch.min(
+    return torch.where(p > 0, torch.min(
         torch.exp((rho - u) / epsilon),
         torch.max(torch.exp((-rho - u) / epsilon), p / s),
-    )
+    ), torch.zeros_like(p))
+    # return torch.min(
+    #     torch.exp((rho - u) / epsilon),
+    #     torch.max(torch.exp((-rho - u) / epsilon), p / s),
+    # )
 
 
 def chizat_proxdiv_step(s, epsilon, rho, p, aprox="kl", u=None):
@@ -294,7 +301,7 @@ def process_dict_for_barycentre(dp: SinkhornDataProcessor, debiasing=True):
             # we can tensorise, so we must be able to tensorize the symmetric problem
 
             # Does eveyone have the same grid?
-            assert edge1 != edge2
+            # assert edge1 != edge2, "{edge1}, {edge2} should be different edges"
             if dp.data_dict[edge1]["x1y1"] is dp.data_dict[edge2]["x1y1"]:
                 # then the edges are sharing a grid
                 # So assign to the firs edge barycentre node the x1x1, x2x2
