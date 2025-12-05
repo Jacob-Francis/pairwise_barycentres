@@ -245,15 +245,10 @@ def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon, d, debiasing=False):
     return temp
 
 
-def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
+def Kd_dual_potential_reduction(dp, d, epsilon):
     """
-    Debiasing requires that we know th grid for the barycentre and this may be tensorisable
-    in which case we need an x1x1, x2x2 type thing in the dictionary. If the grids are the same
-    then x1y1==x1x1.
-
-    SSSSooo
+    Kd reduction for debiasing potential update
     """
-
     # pick first edge becasue all edges should have the same barycentre node at edge[0]
     edge = list(dp.graph.edges)[0]
 
@@ -281,6 +276,21 @@ def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
     if torch.any(s <= 0):
         raise ValueError("Debiasing reduction negative or zero values detected", s.min().item())
     
+    return s
+
+def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
+    """
+    Debiasing requires that we know th grid for the barycentre and this may be tensorisable
+    in which case we need an x1x1, x2x2 type thing in the dictionary. If the grids are the same
+    then x1y1==x1x1.
+
+    SSSSooo
+    """
+
+    shape_temp = d.shape
+
+    s = Kd_dual_potential_reduction(dp, d, epsilon)
+    
     # checking output
     output = torch.sqrt(d * barycentre / s)
     if torch.any(torch.isnan(output)) or torch.any(torch.isinf(output)):
@@ -288,8 +298,9 @@ def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
     if torch.any(output < 0):
         raise ValueError("Debiasing potential update negative or zero values detected", output.min().item())
 
-    return torch.sqrt(d * barycentre / s)
+    assert output.shape == shape_temp
 
+    return output
 
 def sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing: bool = False):
     """

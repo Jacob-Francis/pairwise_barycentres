@@ -8,3 +8,4 @@ from .asymmetric_sinkhorn_log_algorithm import (
 from .marginals import ot_marginals
 from .utils import generate_barycentredataprocessor, tensorise_f
 from .pykeops_formulas import *
+from .constraints import d_constraint
