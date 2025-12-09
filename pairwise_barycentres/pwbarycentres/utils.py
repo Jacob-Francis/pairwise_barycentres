@@ -251,7 +251,6 @@ def generate_barycentredataprocessor(
         data_dict=data_dict,
         graph=graph,
         free_grids=False,
-        grid=grid,
         cuda_device=cuda_device,
     )
 

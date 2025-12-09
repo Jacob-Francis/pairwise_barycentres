@@ -168,7 +168,7 @@ def asymmetric_sinkhorn_algorithm(
 #             epsilon,
 #         )
 
-def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon, d, debiasing=False):
+def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon, d=None, debiasing=False):
     """
     Returns the reduction 
     sum_k exp((f_k - 0.5||xk - yj||^2) / epsilon) * d_{j/k}
@@ -197,7 +197,10 @@ def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon, d, debiasing=False):
         else:
             raise ValueError("k should be either bary_node or data_node")
     else:
-        assert (d == torch.ones_like(dp.data_dict[bary_node]["a"])).all()
+        if d is None:
+            d = torch.ones_like(dp.data_dict[bary_node]["a"])
+        else:
+            assert (d == torch.ones_like(dp.data_dict[bary_node]["a"])).all()
         if k == bary_node:
             a = dp.data_dict[bary_node]["a"]
             ind = 0
@@ -208,7 +211,7 @@ def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon, d, debiasing=False):
             raise ValueError("k should be either bary_node or data_node")
 
     # checking for zeros
-
+   
     # Can I tensorise?
     if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
 
@@ -302,7 +305,7 @@ def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
 
     return output
 
-def sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing: bool = False):
+def sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d=None, debiasing: bool = False):
     """
 
     Wanted behaviour: given node k and edge (k,j) or (j,k) perform the reduction 
