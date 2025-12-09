@@ -269,15 +269,13 @@ def generate_barycentredataprocessor(
 
     return dp
 
-def generate_epsilon_list(epsilon: float, max_iterates: int) -> list:
-    epsilon_list = torch.logspace(
-        torch.log2(torch.tensor(0.5)),  # log2 of the start
-        torch.log2(epsilon.squeeze()),  # log2 of the end
-        steps=10,
-        base=2,
-    )
+def generate_epsilon_list(epsilon_end: float, max_iter=1000):
+    t = torch.arange(1, max_iter + 1, dtype=torch.float64)
+    eps = 0.5 / torch.sqrt(t).to(epsilon_end)
 
-    return epsilon_list.to(epsilon)
+    # clamp so it does not shrink below your desired final epsilon
+    eps = torch.clamp(eps, min=epsilon_end)
+    return eps
 
 def process_dict_for_barycentre(dp: SinkhornDataProcessor, debiasing=True):
     """
