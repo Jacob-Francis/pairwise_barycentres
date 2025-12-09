@@ -35,7 +35,7 @@ def asymmetric_sinkhorn_algorithm(
     barycentre_old = d.clone() / d.sum()
 
     if epsilon_annealing:
-        epsilon_list = generate_epsilon_list(epsilon, max_iterates)
+        epsilon_list = generate_epsilon_list(epsilon)
         count_epsilon = 0
         eps = epsilon_list[count_epsilon].view(-1, 1)
         print('Epsilon annealing: Beta version, needs some tuning')
@@ -61,8 +61,11 @@ def asymmetric_sinkhorn_algorithm(
 
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[1]
-            new_b = sinkhorn_update(dp, edge[1], edge, eps, rho, aprox, d, debiasing=debiasing)
+            new_b = sinkhorn_update(dp, edge[1], edge, eps, rho, aprox, d, debiasing=True)
+            # new_b = sinkhorn_update(dp, edge[1], edge, eps, rho, aprox, torch.ones_like(d), debiasing=False)
+
             # calculate quasi convergnece
+
             err_potentials = max(
                 err_potentials,
                 torch.norm(new_b - dp.data_dict[edge[1]]["a"], p=float("inf")).item(),
@@ -84,7 +87,9 @@ def asymmetric_sinkhorn_algorithm(
         # project on second edge corresponding to the barycentre
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[0]
-            new_a = sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced", d=d, debiasing=debiasing)
+            new_a = sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced", d=d, debiasing=True)
+            # new_a = sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced", d=torch.ones_like(d), debiasing=False)
+
             # calculate quasi convergnece
             err_potentials = max(
                 err_potentials,
@@ -112,7 +117,7 @@ def asymmetric_sinkhorn_algorithm(
                 err_barycentres = tol + 1.0  # reset to continue
                 if verbose:
                     print(
-                        f"Sinkhorn reached tolerance for epsilon {eps.item():.4e}, continuing to epsilon {epsilon_list[count_epsilon].item():.4e}"
+                        f"Sinkhorn reached tolerance continuing to epsilon {epsilon_list[count_epsilon].item():.4e}"
                     )
             if count_epsilon == len(epsilon_list) - 1 or count_iterates > max_iterates // 2:
                 # at final epsilon so turn off annealing

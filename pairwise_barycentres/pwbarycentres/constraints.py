@@ -47,7 +47,7 @@ def barycentre_constraint(barycentre, epsilon, dp, debiasing=True):
     """
 
     # pik_1 is the marginal on the barycentre
-    sumfi = torch.zeros_like(d)
+    sumfi = torch.zeros_like(barycentre)
     for node, e2, w in dp.graph.edges(data=True):
         sumfi += w['weight'] * epsilon * torch.log(dp.data_dict[node]['a'] + 1e-30)
 
