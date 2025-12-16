@@ -20,6 +20,7 @@ def asymmetric_sinkhorn_algorithm(
     epsilon_annealing: bool = False,
     debiasing: bool = True,
     verbose: bool = False,
+    debiasing_update_freq: int = 1,
 ):
     # shorten to pass around
     dp = data_processor
@@ -99,7 +100,13 @@ def asymmetric_sinkhorn_algorithm(
 
         # Update debiasing potential
         if debiasing:
-            d = debiasing_dual_potential_update(dp, d, barycentre, eps)
+            if debiasing_update_freq > 0 and count_iterates % debiasing_update_freq == 0:
+                d = debiasing_dual_potential_update(dp, d, barycentre, eps)
+            elif debiasing_update_freq == 0:
+                raise Warning("Debiasing update freq cannot be zero")
+            elif debiasing_update_freq < 0:
+                for i in range(-debiasing_update_freq):
+                    d = debiasing_dual_potential_update(dp, d, barycentre, eps)
 
         # Tolerance and err_potentials or checks
         potential_error_list.append(err_potentials)
