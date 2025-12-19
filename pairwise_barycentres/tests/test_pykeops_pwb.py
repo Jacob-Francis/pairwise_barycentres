@@ -116,7 +116,7 @@ def test_log_reduction_ii_matches_numpy(n_i, n_j, d):
     # ---------- expected (NumPy) ----------
     D = numpy_sqdist_matrix(Xi, Yj)
     K = np.exp((Fi.reshape(-1, 1) - 0.5 * D) / epsilon)
-    expected = (K.T @ ai) 
+    expected = np.log((K.T @ ai)) 
 
     # call with tensor - then detach and convert to numpy
     result = (
@@ -153,7 +153,7 @@ def test_log_reduction_ij_matches_numpy(n_i, n_j, d):
     # ---------- expected (NumPy) ----------
     D = numpy_sqdist_matrix(Xi, Yj)
     K = np.exp((Fi.reshape(-1, 1) - 0.5 * D) / epsilon)
-    expected = K.sum(axis=0)*aj 
+    expected = np.log(K.sum(axis=0)*aj)
 
     # call with tensor - then detach and convert to numpy
     result = (

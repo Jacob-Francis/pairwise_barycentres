@@ -1,4 +1,5 @@
-from pykeops.torch import generic_sum
+from pykeops.torch import generic_logsumexp, generic_sum, Genred
+import torch
 
 _pykeops_chizat_reduction = generic_sum(
     f"(Exp((- IntInv(2)*SqDist(X, Y))/E)*S )",
@@ -29,30 +30,50 @@ def chizat_reduction(Xi, Yj, epsilon, ai):
         ai,
     )
 
-_pykeops_log_reduction_ii = generic_sum(
-    f"(Exp((F - IntInv(2)*SqDist(X, Y))/E)*S )",
+
+#  self.log_sum_exp_max_shift_weight = Genred(
+#             f"((F + G - IntInv(2)*C*{self.cost_string})/E)",
+#             [
+#                 "G = Vj(1)",  # Uni: 1 scalar per line
+#                 "F = Vi(1)",  # Geo: 1 scalar per line
+#                 "X = Vi(2)",  # Geo: 2-dim
+#                 "Y = Vj(2)",  # Uni: 1 scalar per line
+#                 "E = Pm(1)",  # parameter: 1 scalar per line
+#                 "C = Pm(1)",
+#                 "M = Vj(1)",
+#             ],
+#             reduction_op="Max_SumShiftExpWeight",
+#             axis=1,
+#             formula2="M",
+#         )
+
+_pykeops_log_reduction_ii = Genred(
+    f"((F - IntInv(2)*SqDist(X, Y))/E)",
+    # "f = Vj(1)",  # Geo: 1 scalar per line
+    ["F = Vi(1)",  # Geo: 1 scalar per line
+    f"X = Vi(2)",  # Geo: 2-dim
+    f"Y = Vj(2)",  # Uni: 1 scalar per line
+    "E = Pm(1)",  # parameter: 1 scalar per line
+    "S = Vi(1)"],
+    reduction_op="Max_SumShiftExpWeight",
+    axis=0,
+    formula2="S",
+)
+
+
+def log_reduction_ii(Fi, Xi, Yj, epsilon, ai):
+    """
     "f = Vj(1)",  # Geo: 1 scalar per line
     "F = Vi(1)",  # Geo: 1 scalar per line
     f"X = Vi(2)",  # Geo: 2-dim
     f"Y = Vj(2)",  # Uni: 1 scalar per line
     "E = Pm(1)",  # parameter: 1 scalar per line
     "S = Vi(1)",
-)
-
-
-def log_reduction_ii(Fi, Xi, Yj, epsilon, ai):
-    """
-
-    "f = Vj(1)",  # Geo: 1 scalar per line
-    f"X = Vi(2)",  # Geo: 2-dim
-    f"Y = Vj(2)",  # Uni: 1 scalar per line
-    "E = Pm(1)",  # parameter: 1 scalar per line
-    "S = Vi(1)",
 
 
     """
 
-    return _pykeops_log_reduction_ii(
+    temp =  _pykeops_log_reduction_ii(
         Fi,
         Xi,
         Yj,
@@ -60,16 +81,21 @@ def log_reduction_ii(Fi, Xi, Yj, epsilon, ai):
         ai,
     )
 
-_pykeops_log_reduction_ij = generic_sum(
-    f"(Exp((F - IntInv(2)*SqDist(X, Y))/E)*S )",
-    "f = Vj(1)",  # Geo: 1 scalar per line
-    "F = Vi(1)",  # Geo: 1 scalar per line
+    temp = temp[:, 0] + torch.log(temp[:, 1])
+    return temp.view(-1, 1) 
+
+_pykeops_log_reduction_ij = Genred(
+    f"((F - IntInv(2)*SqDist(X, Y))/E)",
+    # "f = Vj(1)",  # Geo: 1 scalar per line
+    ["F = Vi(1)",  # Geo: 1 scalar per line
     f"X = Vi(2)",  # Geo: 2-dim
     f"Y = Vj(2)",  # Uni: 1 scalar per line
     "E = Pm(1)",  # parameter: 1 scalar per line
-    "S = Vj(1)",
+    "S = Vj(1)"],
+    reduction_op="Max_SumShiftExpWeight",
+    axis=0,
+    formula2="S",
 )
-
 
 def log_reduction_ij(Fi, Xi, Yj, epsilon, aj):
     """
@@ -83,13 +109,16 @@ def log_reduction_ij(Fi, Xi, Yj, epsilon, aj):
 
     """
 
-    return _pykeops_log_reduction_ij(
+    temp =  _pykeops_log_reduction_ij(
         Fi,
         Xi,
         Yj,
         epsilon,
         aj,
     )
+
+    temp = temp[:, 0] + torch.log(temp[:, 1])
+    return temp.view(-1, 1) 
 
 _pykeops_chizat_marginals = generic_sum(
     f"(Exp(( - IntInv(2)*SqDist(X, Y))/E)*S*P )",

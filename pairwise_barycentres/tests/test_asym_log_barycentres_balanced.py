@@ -1,182 +1,117 @@
-# import numpy as np
-# from scipy.spatial.distance import cdist
-# import torch
-# import pytest
-# from pwbarycentres import (
-#     asymmetric_sinkhorn_log_algorithm,
-#     generate_barycentredataprocessor,
-# )
-# import networkx as nx
+import numpy as np
+from scipy.spatial.distance import cdist
+import torch
+import pytest
+from pwbarycentres import (
+    asymmetric_sinkhorn_log_algorithm,
+    generate_barycentredataprocessor,
+)
+import networkx as nx
 
-# torch.set_printoptions(precision=8)
+torch.set_printoptions(precision=8)
 
-# # avoid scipy dependence
-# def numpy_sqdist_matrix(X, Y):
-#     """
-#     Return matrix D of squared distances between rows of X (n x d) and Y (m x d),
-#     shape (n, m).
-#     """
-#     # Using (x - y)^2 = ||x||^2 + ||y||^2 - 2 x.y
-#     X2 = np.sum(X**2, axis=1)[:, None]  # (n,1)
-#     Y2 = np.sum(Y**2, axis=1)[None, :]  # (1,m)
-#     XY = X @ Y.T  # (n,m)
-#     D = X2 + Y2 - 2 * XY
-#     return D
-
-
-# # @pytest.mark.parametrize(
-# #     "n1, n2, members, m1, m2, L, grid_type",
-# #     [
-# #         (11, 10, 3, 5, 7, 0.9, "flat"),
-# #         (8, 8, 3, 13, 8, 3.5, "tensor"),
-# #         (12, 11, 3, 9, 9, 2.0, "tuple"),
-# #     ],
-# # )  # noqa: E501
-# # def test_log_sinkhorn_update_against_numpy(
-# #     n1, n2, members, m1, m2, L, grid_type
-# # ):
-
-# #     if grid_type == "flat":
-# #         X = torch.cartesian_prod(
-# #             torch.linspace(0, L, n1), torch.linspace(0, L, n2)
-# #         ).type(torch.DoubleTensor)
-# #         Y = torch.cartesian_prod(
-# #             torch.linspace(0, L, m1), torch.linspace(0, L, m2)
-# #         ).type(torch.DoubleTensor)
-# #     elif grid_type == "tensor":
-# #         X = torch.stack(
-# #             torch.meshgrid(
-# #                 torch.linspace(0, L, n1), torch.linspace(0, L, n2), indexing="ij"
-# #             ),
-# #             dim=-1,
-# #         ).type(torch.DoubleTensor)
-# #         Y = torch.stack(
-# #             torch.meshgrid(
-# #                 torch.linspace(0, L, m1), torch.linspace(0, L, m2), indexing="ij"
-# #             ),
-# #             dim=-1,
-# #         ).type(torch.DoubleTensor)
-# #     elif grid_type == "tuple":
-# #         X = (torch.linspace(0, L, n1), torch.linspace(0, L, n2))
-# #         Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
-
-# #     data = []
-
-# #     for m in range(members):
-# #         data.append([None, X])  # uniform density, grid will equal everywhere
-
-# #     np.random.seed(12313 + n1 + n2 + m1 + m2 + members)
-
-# #     # epsilon must be positive scalar
-# #     epsilon = 1 / max(np.sqrt(n1 * n2), np.sqrt(m1 * m2))
-
-# #     ai = np.random.rand(n1*n2).astype(np.float64)
-# #     Fi = np.random.rand(n1*n2).astype(np.float64)
-
-# #     # ---------- expected (NumPy) ----------
-# #     D = numpy_sqdist_matrix(X, Y)
-# #     K = np.exp((- 0.5 * D) / epsilon)
-# #     expected = (K.T @ ai) 
-
-# #     s - epsilon*torch.log(p)
-    
-# #     # generate the barycentre dataprocessor class which will store all objects
-# #     # of interest. It will also create the correct graph, and given no density of graphs
-# #     # will create uniform densities on the grids
-# #     data_processor = generate_barycentredataprocessor(data, barycentre_grid=Y, potentials='f')
+# avoid scipy dependence
+def numpy_sqdist_matrix(X, Y):
+    """
+    Return matrix D of squared distances between rows of X (n x d) and Y (m x d),
+    shape (n, m).
+    """
+    # Using (x - y)^2 = ||x||^2 + ||y||^2 - 2 x.y
+    X2 = np.sum(X**2, axis=1)[:, None]  # (n,1)
+    Y2 = np.sum(Y**2, axis=1)[None, :]  # (1,m)
+    XY = X @ Y.T  # (n,m)
+    D = X2 + Y2 - 2 * XY
+    return D
 
 
-# #     temp = log_sinkhorn_update(dp, 0, edge, epsilon, rho, aprox)
+# --------------------------------------------------------
+# Testing barycentre and other grids which are the same
+# --------------------------------------------------------
+@pytest.mark.parametrize(
+    "n1, n2, members, L, grid_type",
+    [
+        (8, 8, 4, 3.5, "tensor"),
+        (9, 8, 3, 3.5, "tensor"),
+        (8, 9, 2, 3.5, "tensor"),
+        (11, 11, 6, 0.9, "flat"),
+        (11, 10, 7, 0.9, "flat"),
+        (11, 12, 8, 0.9, "flat"),
+        (12, 12, 3, 6.0, "tuple"),
+        (12, 13, 3, 6.0, "tuple"),
+        (12, 11, 3, 6.0, "tuple"),
+    ],
+)  # noqa: E501
+def test_asym_log_bary_with_same_grid_uniform_density_without_debiasing(
+    n1, n2, members, L, grid_type
+):
 
+    if grid_type == "flat":
+        X = torch.cartesian_prod(
+            torch.linspace(0, L, n1), torch.linspace(0, L, n2)
+        ).type(torch.DoubleTensor)
+    elif grid_type == "tensor":
+        X = torch.stack(
+            torch.meshgrid(
+                torch.linspace(0, L, n1), torch.linspace(0, L, n2), indexing="ij"
+            ),
+            dim=-1,
+        ).type(torch.DoubleTensor)
+    elif grid_type == "tuple":
+        X = (torch.linspace(0, L, n1), torch.linspace(0, L, n2))
 
-# # --------------------------------------------------------
-# # Testing barycentre and other grids which are the same
-# # --------------------------------------------------------
-# @pytest.mark.parametrize(
-#     "n1, n2, members, L, grid_type",
-#     [
-#         (8, 8, 4, 3.5, "tensor"),
-#         (9, 8, 3, 3.5, "tensor"),
-#         (8, 9, 2, 3.5, "tensor"),
-#         (11, 11, 6, 0.9, "flat"),
-#         (11, 10, 7, 0.9, "flat"),
-#         (11, 12, 8, 0.9, "flat"),
-#         (12, 12, 3, 6.0, "tuple"),
-#         (12, 13, 3, 6.0, "tuple"),
-#         (12, 11, 3, 6.0, "tuple"),
-#     ],
-# )  # noqa: E501
-# def test_asym_log_bary_with_same_grid_uniform_density_without_debiasing(
-#     n1, n2, members, L, grid_type
-# ):
+    data = []
 
-#     if grid_type == "flat":
-#         X = torch.cartesian_prod(
-#             torch.linspace(0, L, n1), torch.linspace(0, L, n2)
-#         ).type(torch.DoubleTensor)
-#     elif grid_type == "tensor":
-#         X = torch.stack(
-#             torch.meshgrid(
-#                 torch.linspace(0, L, n1), torch.linspace(0, L, n2), indexing="ij"
-#             ),
-#             dim=-1,
-#         ).type(torch.DoubleTensor)
-#     elif grid_type == "tuple":
-#         X = (torch.linspace(0, L, n1), torch.linspace(0, L, n2))
+    for _ in range(members):
+        data.append([None, None])  # uniform density, grid will equal everywhere
 
-#     data = []
+    # generate the barycentre dataprocessor class which will store all objects
+    # of interest. It will also create the correct graph, and given no density of graphs
+    # will create uniform densities on the grids
+    data_processor = generate_barycentredataprocessor(data, barycentre_grid=X, grid=X, potentials='f')
 
-#     for m in range(members):
-#         data.append([None, None])  # uniform density, grid will equal everywhere
+    # Assert that the orginal structure is correct
+    for edges in data_processor.graph.edges():
+        assert (
+            np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0)
+            < 1e-5
+        ), (data_processor.data_dict[edges[0]]["density"].sum().item())
+        assert (
+            np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0)
+            < 1e-5
+        ), (data_processor.data_dict[edges[1]]["density"].sum().item())
 
-#     # generate the barycentre dataprocessor class which will store all objects
-#     # of interest. It will also create the correct graph, and given no density of graphs
-#     # will create uniform densities on the grids
-#     data_processor = generate_barycentredataprocessor(data, barycentre_grid=X, grid=X, potentials='f')
+    # run asymmetric sinkhorn algorithm
+    data_processor, barycentre, potential_error_list, barycentre_error_list = (
+        asymmetric_sinkhorn_log_algorithm(
+            data_processor,
+            epsilon=1 / np.sqrt(n1 * n2),
+            rho=1.0,
+            aprox="balanced",
+            max_iterates=500,
+            tol=1e-8,
+            epsilon_annealing=False,
+            debiasing=False,
+        )
+    )
+    assert barycentre_error_list[-1] < 1e-7  # less than tolerance
+    print('potnetials erroes', potential_error_list[-10:], len(potential_error_list))
+    assert np.abs(barycentre.sum().item() - 1.0) < 1e-5
 
-#     # Assert that the orginal structure is correct
-#     for edges in data_processor.graph.edges():
-#         assert (
-#             np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0)
-#             < 1e-5
-#         ), (data_processor.data_dict[edges[0]]["density"].sum().item())
-#         assert (
-#             np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0)
-#             < 1e-5
-#         ), (data_processor.data_dict[edges[1]]["density"].sum().item())
+    for edges in data_processor.graph.edges():
+        assert (
+            np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0)
+            < 1e-5
+        ), (data_processor.data_dict[edges[0]]["density"].sum().item())
+        assert (
+            np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0)
+            < 1e-5
+        ), (data_processor.data_dict[edges[1]]["density"].sum().item())
 
-#     # run asymmetric sinkhorn algorithm
-#     data_processor, barycentre, potential_error_list, barycentre_error_list = (
-#         asymmetric_sinkhorn_log_algorithm(
-#             data_processor,
-#             epsilon=1 / np.sqrt(n1 * n2),
-#             rho=1.0,
-#             aprox="balanced",
-#             max_iterates=500,
-#             tol=1e-8,
-#             epsilon_annealing=False,
-#             debiasing=False,
-#         )
-#     )
-#     assert barycentre_error_list[-1] < 1e-7  # less than tolerance
-
-#     assert np.abs(barycentre.sum().item() - 1.0) < 1e-5
-
-#     for edges in data_processor.graph.edges():
-#         assert (
-#             np.abs(data_processor.data_dict[edges[0]]["density"].sum().item() - 1.0)
-#             < 1e-5
-#         ), (data_processor.data_dict[edges[0]]["density"].sum().item())
-#         assert (
-#             np.abs(data_processor.data_dict[edges[1]]["density"].sum().item() - 1.0)
-#             < 1e-5
-#         ), (data_processor.data_dict[edges[1]]["density"].sum().item())
-
-#     # Since using a uniform density the barycentre should also be uniform
-#     # Because of entropic error the tolerance is looser here
-#     assert torch.allclose(
-#         barycentre, torch.ones_like(barycentre) / barycentre.numel(), atol=1e-2
-#     )
+    # Since using a uniform density the barycentre should also be uniform
+    # Because of entropic error the tolerance is looser here
+    assert torch.allclose(
+        barycentre, torch.ones_like(barycentre) / barycentre.numel(), atol=1e-2
+    )
 
 
 # @pytest.mark.parametrize(
@@ -267,80 +202,80 @@
 #     )
 
 
-# # --------------------------------------------------------
-# # Testing barycentre and other grids which are different
-# # --------------------------------------------------------
-# @pytest.mark.parametrize(
-#     "n1, n2, members, m1, m2, L, grid_type",
-#     [
-#         (11, 10, 3, 5, 7, 0.9, "flat"),
-#         (8, 8, 4, 13, 8, 3.5, "tensor"),
-#         (12, 11, 3, 9, 9, 2.0, "tuple"),
-#     ],
-# )  # noqa: E501
-# def test_asym_log_bary_with_different_grid_uniform_density_without_debiasing(
-#     n1, n2, members, m1, m2, L, grid_type
-# ):
+# --------------------------------------------------------
+# Testing barycentre and other grids which are different
+# --------------------------------------------------------
+@pytest.mark.parametrize(
+    "n1, n2, members, m1, m2, L, grid_type",
+    [
+        (11, 10, 3, 5, 7, 0.9, "flat"),
+        (8, 8, 4, 13, 8, 3.5, "tensor"),
+        (12, 11, 3, 9, 9, 2.0, "tuple"),
+    ],
+)  # noqa: E501
+def test_asym_log_bary_with_different_grid_uniform_density_without_debiasing(
+    n1, n2, members, m1, m2, L, grid_type
+):
 
-#     if grid_type == "flat":
-#         X = torch.cartesian_prod(
-#             torch.linspace(0, L, n1), torch.linspace(0, L, n2)
-#         ).type(torch.DoubleTensor)
-#         Y = torch.cartesian_prod(
-#             torch.linspace(0, L, m1), torch.linspace(0, L, m2)
-#         ).type(torch.DoubleTensor)
-#     elif grid_type == "tensor":
-#         X = torch.stack(
-#             torch.meshgrid(
-#                 torch.linspace(0, L, n1), torch.linspace(0, L, n2), indexing="ij"
-#             ),
-#             dim=-1,
-#         ).type(torch.DoubleTensor)
-#         Y = torch.stack(
-#             torch.meshgrid(
-#                 torch.linspace(0, L, m1), torch.linspace(0, L, m2), indexing="ij"
-#             ),
-#             dim=-1,
-#         ).type(torch.DoubleTensor)
-#     elif grid_type == "tuple":
-#         X = (torch.linspace(0, L, n1), torch.linspace(0, L, n2))
-#         Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
+    if grid_type == "flat":
+        X = torch.cartesian_prod(
+            torch.linspace(0, L, n1), torch.linspace(0, L, n2)
+        ).type(torch.DoubleTensor)
+        Y = torch.cartesian_prod(
+            torch.linspace(0, L, m1), torch.linspace(0, L, m2)
+        ).type(torch.DoubleTensor)
+    elif grid_type == "tensor":
+        X = torch.stack(
+            torch.meshgrid(
+                torch.linspace(0, L, n1), torch.linspace(0, L, n2), indexing="ij"
+            ),
+            dim=-1,
+        ).type(torch.DoubleTensor)
+        Y = torch.stack(
+            torch.meshgrid(
+                torch.linspace(0, L, m1), torch.linspace(0, L, m2), indexing="ij"
+            ),
+            dim=-1,
+        ).type(torch.DoubleTensor)
+    elif grid_type == "tuple":
+        X = (torch.linspace(0, L, n1), torch.linspace(0, L, n2))
+        Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
 
-#     data = []
+    data = []
 
-#     for m in range(members):
-#         data.append([None, X])  # uniform density, grid will equal everywhere
+    for m in range(members):
+        data.append([None, X])  # uniform density, grid will equal everywhere
 
-#     # generate the barycentre dataprocessor class which will store all objects
-#     # of interest. It will also create the correct graph, and given no density of graphs
-#     # will create uniform densities on the grids
-#     data_processor = generate_barycentredataprocessor(data, barycentre_grid=Y, potentials='f')
+    # generate the barycentre dataprocessor class which will store all objects
+    # of interest. It will also create the correct graph, and given no density of graphs
+    # will create uniform densities on the grids
+    data_processor = generate_barycentredataprocessor(data, barycentre_grid=Y, potentials='f')
 
-#     # run asymmetric sinkhorn algorithm
-#     data_processor, barycentre, potential_error_list, barycentre_error_list = (
-#         asymmetric_sinkhorn_log_algorithm(
-#             data_processor,
-#             epsilon=max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
-#             rho=1.0,
-#             aprox="balanced",
-#             max_iterates=500,
-#             tol=1e-7,
-#             epsilon_annealing=False,
-#             debiasing=False,
-#         )
-#     )
+    # run asymmetric sinkhorn algorithm
+    data_processor, barycentre, potential_error_list, barycentre_error_list = (
+        asymmetric_sinkhorn_log_algorithm(
+            data_processor,
+            epsilon=max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
+            rho=1.0,
+            aprox="balanced",
+            max_iterates=500,
+            tol=1e-7,
+            epsilon_annealing=False,
+            debiasing=False,
+        )
+    )
 
-#     assert barycentre_error_list[-1] < 1e-7  # less than tolerance
+    assert barycentre_error_list[-1] < 1e-7, len(barycentre_error_list)  # less than tolerance
 
-#     for edges in data_processor.graph.edges():
-#         assert np.isclose(
-#             data_processor.data_dict[edges[0]]["density"].sum().item(), 1.0
-#         )
-#         assert np.isclose(
-#             data_processor.data_dict[edges[1]]["density"].sum().item(), 1.0
-#         )
+    for edges in data_processor.graph.edges():
+        assert np.isclose(
+            data_processor.data_dict[edges[0]]["density"].sum().item(), 1.0
+        )
+        assert np.isclose(
+            data_processor.data_dict[edges[1]]["density"].sum().item(), 1.0
+        )
 
-#     # The uniform test is too strict when the grids differ
+    # The uniform test is too strict when the grids differ
 
 
 # @pytest.mark.parametrize(
@@ -587,7 +522,7 @@
 #         )
 
 
-# if __name__ == "__main__":
-#     import sys
+if __name__ == "__main__":
+    import sys
 
-#     pytest.main(sys.argv)
+    pytest.main(sys.argv)

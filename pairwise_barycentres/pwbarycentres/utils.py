@@ -104,7 +104,6 @@ def kl_log_aprox(s, epsilon, rho, p, tol=1e-12):
     return  torch.where(p>tol, (s - epsilon*torch.log(p)) * rho/(epsilon + rho), torch.zeros_like(s))
 
 def balanced_log_aprox(s, epsilon, rho, p, tol=1e-12):
-    print('bal here', torch.where(p>tol, s - epsilon*torch.log(p), torch.zeros_like(s)) )
     return torch.where(p>tol, s - epsilon*torch.log(p), torch.zeros_like(s))
 
 def log_aprox_step(s, epsilon, rho, p, aprox="kl"):
@@ -200,9 +199,12 @@ def _tensorised_log_sinkhorn_reduction(f, d, ind, x1y1, x2y2, epsilon):
     # kernel computations - K @ a
     # main bottle neck
     if ind==0:
-        return tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), torch.exp(f / epsilon)*d)
+        temp = tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), torch.exp(f / epsilon)*d)
     else:
-        return d*tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), torch.exp((f) / epsilon))
+        temp = d*tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), torch.exp(f / epsilon))
+
+    return torch.log(temp)
+
 
 def graph_creator_from_edges_and_weights(edges, weights=None):
     import networkx as nx
