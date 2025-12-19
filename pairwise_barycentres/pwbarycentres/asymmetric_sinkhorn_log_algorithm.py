@@ -24,6 +24,7 @@ def asymmetric_sinkhorn_log_algorithm(
     epsilon_annealing: bool = False,
     debiasing: bool = True,
     verbose: bool = False,
+    debiasing_update_freq: int = 5,
 ):
     # shorten to pass around
     dp = data_processor
@@ -66,7 +67,7 @@ def asymmetric_sinkhorn_log_algorithm(
 
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[1]
-            new_b = log_sinkhorn_update(dp, edge[1], edge, eps, rho, aprox, d=d, debiasing=False)
+            new_b = log_sinkhorn_update(dp, edge[1], edge, eps, rho, aprox, d=d, debiasing=True) # if False the d=None!
             if torch.any(torch.isnan(new_b)) or torch.any(torch.isinf(new_b)):
                 raise ValueError("B NaN detected in sinkhorn update", new_b.sum().item(), count_iterates, edge)
             # calculate quasi convergnece
@@ -90,7 +91,7 @@ def asymmetric_sinkhorn_log_algorithm(
         # project on second edge corresponding to the barycentre
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[0]
-            new_a = log_sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced", d=d, debiasing=False)
+            new_a = log_sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced", d=d, debiasing=True)
             if torch.any(torch.isnan(new_a)) or torch.any(torch.isinf(new_a)):
                 raise ValueError("A NaN detected in sinkhorn update", new_a.sum().item(), count_iterates, edge)
             # calculate quasi convergnece
@@ -102,11 +103,12 @@ def asymmetric_sinkhorn_log_algorithm(
 
         # Update debiasing potential
         if debiasing:
-            d = debiasing_dual_potential_update(dp, d, barycentre, eps)
-            # Attach potential to the graph - all pointing to the same item
-            # ToDo not have to redo this every time
-            for edges in dp.graph.edges:
-                dp.data_dict[edges[0]]["debiased_potential"] = d
+            if count_iterates % debiasing_update_freq == 0:
+                d = debiasing_dual_potential_update(dp, d, barycentre, eps)
+                # Attach potential to the graph - all pointing to the same item
+                # ToDo not have to redo this every time
+                for edges in dp.graph.edges:
+                    dp.data_dict[edges[0]]["debiased_potential"] = d
 
 
         # Tolerance and err_potentials or checks
@@ -300,7 +302,7 @@ def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing):
         raise ValueError("log_sinkhorn_update NaN/inf detected in sinkhorn update", s.sum().item(), k, edge)
 
 
-    temp = log_aprox_step(
+    temp = -log_aprox_step(
         s,
         epsilon,
         rho,
