@@ -53,11 +53,11 @@ def asymmetric_sinkhorn_algorithm(
     barycentre_error_list = []
 
     while count_iterates < max_iterates and err_barycentres > tol:
-        print('current error', potential_error_list[-1] if len(potential_error_list)>0 else 'N/A', 'barycentre error', barycentre_error_list[-1] if len(barycentre_error_list)>0 else 'N/A')
-        if debiasing_update_freq > 0 and count_iterates % debiasing_update_freq == 0:
-            # reset errors
-            err_potentials = -np.inf
-            err_barycentres = -np.inf
+        # print('current error', potential_error_list[-1] if len(potential_error_list)>0 else 'N/A', 'barycentre error', barycentre_error_list[-1] if len(barycentre_error_list)>0 else 'N/A')
+        # if debiasing_update_freq > 0 and count_iterates % debiasing_update_freq == 0:
+        #     # reset errors
+        err_potentials = -np.inf
+        err_barycentres = -np.inf
 
         # Project edge corresponding to the data
         # I could stick these in paralell on the gpu - but for 200 by 200 I'm had problems with memory
@@ -76,17 +76,17 @@ def asymmetric_sinkhorn_algorithm(
             dp.data_dict[edge[1]]["a"] = new_b
 
         # Barycentre updates and update barycentre in dictionary
-        if debiasing_update_freq > 0 and count_iterates % debiasing_update_freq == 0:
-            barycentre_old = barycentre.clone()
+        # if debiasing_update_freq > 0 and count_iterates % debiasing_update_freq == 0:
+        barycentre_old = barycentre.clone()
 
-            barycentre = balanced_barycentre_updates(dp, d, eps)
+        barycentre = balanced_barycentre_updates(dp, d, eps)
 
-            # calcualte error to old barycentre
-            err_barycentres = torch.norm(barycentre - barycentre_old, p=float("inf")).item()
+        # calcualte error to old barycentre
+        err_barycentres = torch.norm(barycentre - barycentre_old, p=float("inf")).item()
 
-            # update the barycentre in the dictionary
-            for edge in dp.graph.edges:
-                dp.data_dict[edge[0]]["density"] = barycentre
+        # update the barycentre in the dictionary
+        for edge in dp.graph.edges:
+            dp.data_dict[edge[0]]["density"] = barycentre
 
         # project on second edge corresponding to the barycentre
         for edge in dp.graph.edges:
