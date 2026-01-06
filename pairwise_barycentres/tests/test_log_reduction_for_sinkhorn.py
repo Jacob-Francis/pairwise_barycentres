@@ -256,10 +256,11 @@ def test_log_reduction_update_debiasingTRUE_against_numpy(
     data_processor = generate_barycentredataprocessor(data, barycentre_grid=Y, potentials='f')
 
     # make up a debiasing potential 
-    for k in data_processor.graph.edges():
-        n_points = data_processor.data_dict[k[0]]['f'].shape
-        debiasing_potential = torch.rand(*n_points, 1, dtype=torch.double).squeeze()
-        data_processor.data_dict[k[0]]['debiased_potential'] = data_processor._torch_numpy_process(debiasing_potential)
+
+    n_points = data_processor.data_dict[0]['f'].shape
+    debiasing_potential = torch.rand(*n_points, 1, dtype=torch.double).squeeze()
+    d = data_processor._torch_numpy_process(debiasing_potential)
+
 
     epsilon = 1 / max(np.sqrt(n1*n2), np.sqrt(m1*m2))
     epsilon = data_processor._torch_numpy_process(epsilon).view(-1,1)
@@ -269,6 +270,7 @@ def test_log_reduction_update_debiasingTRUE_against_numpy(
     temp0 = _log_reduction_for_sinkhorn(
         dp=data_processor,
         k=0,
+        d=d,
         edge=(0,1),
         epsilon=epsilon,
         debiasing=True,
@@ -277,6 +279,7 @@ def test_log_reduction_update_debiasingTRUE_against_numpy(
     temp1 = _log_reduction_for_sinkhorn(
         dp=data_processor,
         k=1,
+        d=d,
         edge=(0,1),
         epsilon=epsilon,
         debiasing=True,
@@ -294,7 +297,7 @@ def test_log_reduction_update_debiasingTRUE_against_numpy(
            torch.cartesian_prod(*X).numpy(),
         )
     K = np.exp((Fi.reshape(-1,1) - 0.5 * D) / epsilon.item())
-    expected = np.log(K.T @data_processor.data_dict[0]['debiased_potential'].view(-1,1).detach().cpu().numpy())
+    expected = np.log(K.T @d.view(-1,1).detach().cpu().numpy())
 
     assert np.allclose(expected.reshape(-1), temp0.detach().cpu().numpy().reshape(-1), rtol=1e-5, atol=1e-5)
 
@@ -302,6 +305,12 @@ def test_log_reduction_update_debiasingTRUE_against_numpy(
     Fi = data_processor.data_dict[1]['f'].view(-1, 1).detach().cpu().numpy()
     # ---------- expected (NumPy) ----------
     K = np.exp((Fi.reshape(1,-1) - 0.5 * D) / epsilon.item())
-    expected = np.log(K.sum(1).reshape(-1,1) * data_processor.data_dict[0]['debiased_potential'].view(-1,1).detach().cpu().numpy())
+    expected = np.log(K.sum(1).reshape(-1,1) * d.view(-1,1).detach().cpu().numpy())
 
     assert np.allclose(expected.reshape(-1), temp1.detach().cpu().numpy().reshape(-1), rtol=1e-5, atol=1e-5)
+
+
+if __name__ == "__main__":
+    import sys
+
+    pytest.main(sys.argv)

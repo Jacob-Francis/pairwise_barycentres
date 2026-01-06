@@ -182,8 +182,6 @@ def _log_reduction_for_sinkhorn(dp, k, edge, epsilon, d=None, debiasing=True):
             ind = 1
         else:
             raise ValueError("k should be either bary_node or data_node")
-        
-        d = dp.data_dict[bary_node]["debiased_potential"]
     
         assert d is not None, "Debiasing potential should be attached to barycentre node"
     else:
