@@ -107,15 +107,16 @@ def numpy_sqdist_matrix(X, Y):
 
 @pytest.mark.parametrize(
     "n1, n2, members, m1, m2, L, grid_type",
-    [
-        (11, 10, 3, 5, 7, 0.9, "flat"),
+    [        
         (8, 8, 3, 13, 8, 3.5, "tensor"),
+        (11, 10, 3, 5, 7, 0.9, "flat"),
         (12, 11, 3, 9, 9, 2.0, "tuple"),
     ],
 )  # noqa: E501
 def test_log_reduction_update_debiasingFALSE_against_numpy(
     n1, n2, members, m1, m2, L, grid_type
 ):
+    np.random.seed(12313*members + n1 + n2 + m1 + m2)
 
     # Generate grid
     if grid_type == "flat":
@@ -153,7 +154,7 @@ def test_log_reduction_update_debiasingFALSE_against_numpy(
     data_processor = generate_barycentredataprocessor(data, barycentre_grid=Y, potentials='f')
 
     epsilon = 1 / max(np.sqrt(n1*n2), np.sqrt(m1*m2))
-    epsilon=data_processor._torch_numpy_process(epsilon).view(-1,1)
+    epsilon = data_processor._torch_numpy_process(epsilon).view(-1,1)
     
     # Perform reduction
     # _log_reduction_for_sinkhorn(dp, k, edge, epsilon, debiasing=True)
@@ -174,15 +175,6 @@ def test_log_reduction_update_debiasingFALSE_against_numpy(
     )
 
     # NUMPY VERSION
-
-    # Returns the reduction 
-    # sum_k exp((f_k - 0.5||xk - yj||^2) / epsilon) * d_{j/k}
-
-    # d is decided by debiasing flag and which node k is
-    np.random.seed(12313*members + n1 + n2 + m1 + m2)
-
-    # epsilon must be positive scalar
-    epsilon = 1 / max(np.sqrt(n1*n2), np.sqrt(m1*m2))
     Fi = data_processor.data_dict[0]['f'].view(-1, 1).detach().cpu().numpy()
     # ---------- expected (NumPy) ----------
     if grid_type == "flat" or grid_type == "tensor":
@@ -192,12 +184,12 @@ def test_log_reduction_update_debiasingFALSE_against_numpy(
            torch.cartesian_prod(*Y).numpy(),
            torch.cartesian_prod(*X).numpy(),
         )
-    K = np.exp((Fi.reshape(-1,1) - 0.5 * D) / epsilon)
-    expected = K.sum(0)
+    K = np.exp((Fi.reshape(-1,1) - 0.5 * D) / epsilon.item())
+    expected = np.log(K.sum(0))
 
-    print("expected:", expected.reshape(-1))
-    print("mine:", temp0.detach().cpu().numpy().reshape(-1))
-
+    print("expected bary:", expected.reshape(-1)[:10])
+    print("temp1 bary:", temp1.detach().cpu().numpy().reshape(-1)[:10])
+    print("temp1 bary:", temp0.detach().cpu().numpy().reshape(-1)[:10])
 
     assert np.allclose(expected.reshape(-1), temp0.detach().cpu().numpy().reshape(-1), rtol=1e-5, atol=1e-5)
 
@@ -205,8 +197,13 @@ def test_log_reduction_update_debiasingFALSE_against_numpy(
     # epsilon must be positive scalar
     Fi = data_processor.data_dict[1]['f'].view(-1, 1).detach().cpu().numpy()
     # ---------- expected (NumPy) ----------
-    K = np.exp((Fi.reshape(1,-1) - 0.5 * D) / epsilon)
-    expected = K.sum(1)
+    K = np.exp((Fi.reshape(1,-1) - 0.5 * D) / epsilon.item())
+    expected = np.log(K.sum(1))
+
+    print('passes first')
+    print("expected data:", expected.reshape(-1)[:10])
+    print("mine data:", temp0.detach().cpu().numpy().reshape(-1)[:10])
+
 
     assert np.allclose(expected.reshape(-1), temp1.detach().cpu().numpy().reshape(-1), rtol=1e-5, atol=1e-5)
 
@@ -221,6 +218,7 @@ def test_log_reduction_update_debiasingFALSE_against_numpy(
 def test_log_reduction_update_debiasingTRUE_against_numpy(
     n1, n2, members, m1, m2, L, grid_type
 ):
+    np.random.seed(12313*members + n1 + n2 + m1 + m2)
 
     # Generate grid
     if grid_type == "flat":
@@ -257,14 +255,14 @@ def test_log_reduction_update_debiasingTRUE_against_numpy(
     # will create uniform densities on the grids
     data_processor = generate_barycentredataprocessor(data, barycentre_grid=Y, potentials='f')
 
-    # make upa debiasing potential 
+    # make up a debiasing potential 
     for k in data_processor.graph.edges():
         n_points = data_processor.data_dict[k[0]]['f'].shape
         debiasing_potential = torch.rand(*n_points, 1, dtype=torch.double).squeeze()
         data_processor.data_dict[k[0]]['debiased_potential'] = data_processor._torch_numpy_process(debiasing_potential)
 
     epsilon = 1 / max(np.sqrt(n1*n2), np.sqrt(m1*m2))
-    epsilon=data_processor._torch_numpy_process(epsilon).view(-1,1)
+    epsilon = data_processor._torch_numpy_process(epsilon).view(-1,1)
     
     # Perform reduction
     # _log_reduction_for_sinkhorn(dp, k, edge, epsilon, debiasing=True)
@@ -286,14 +284,6 @@ def test_log_reduction_update_debiasingTRUE_against_numpy(
 
     # NUMPY VERSION
 
-    # Returns the reduction 
-    # sum_k exp((f_k - 0.5||xk - yj||^2) / epsilon) * d_{j/k}
-
-    # d is decided by debiasing flag and which node k is
-    np.random.seed(12313*members + n1 + n2 + m1 + m2)
-
-    # epsilon must be positive scalar
-    epsilon = 1 / max(np.sqrt(n1*n2), np.sqrt(m1*m2))
     Fi = data_processor.data_dict[0]['f'].view(-1, 1).detach().cpu().numpy()
     # ---------- expected (NumPy) ----------
     if grid_type == "flat" or grid_type == "tensor":
@@ -303,19 +293,15 @@ def test_log_reduction_update_debiasingTRUE_against_numpy(
            torch.cartesian_prod(*Y).numpy(),
            torch.cartesian_prod(*X).numpy(),
         )
-    K = np.exp((Fi.reshape(-1,1) - 0.5 * D) / epsilon)
-    expected = K.T @data_processor.data_dict[0]['debiased_potential'].view(-1,1).detach().cpu().numpy()
+    K = np.exp((Fi.reshape(-1,1) - 0.5 * D) / epsilon.item())
+    expected = np.log(K.T @data_processor.data_dict[0]['debiased_potential'].view(-1,1).detach().cpu().numpy())
 
     assert np.allclose(expected.reshape(-1), temp0.detach().cpu().numpy().reshape(-1), rtol=1e-5, atol=1e-5)
-
 
     # epsilon must be positive scalar
     Fi = data_processor.data_dict[1]['f'].view(-1, 1).detach().cpu().numpy()
     # ---------- expected (NumPy) ----------
-    K = np.exp((Fi.reshape(1,-1) - 0.5 * D) / epsilon)
-    expected = K.sum(1).reshape(-1,1) * data_processor.data_dict[0]['debiased_potential'].view(-1,1).detach().cpu().numpy()
-
-    print("expected:", expected.reshape(-1))
-    print("mine:", temp1.detach().cpu().numpy().reshape(-1))
+    K = np.exp((Fi.reshape(1,-1) - 0.5 * D) / epsilon.item())
+    expected = np.log(K.sum(1).reshape(-1,1) * data_processor.data_dict[0]['debiased_potential'].view(-1,1).detach().cpu().numpy())
 
     assert np.allclose(expected.reshape(-1), temp1.detach().cpu().numpy().reshape(-1), rtol=1e-5, atol=1e-5)

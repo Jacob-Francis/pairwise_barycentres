@@ -182,6 +182,10 @@ def _log_reduction_for_sinkhorn(dp, k, edge, epsilon, d=None, debiasing=True):
             ind = 1
         else:
             raise ValueError("k should be either bary_node or data_node")
+        
+        d = dp.data_dict[bary_node]["debiased_potential"]
+    
+        assert d is not None, "Debiasing potential should be attached to barycentre node"
     else:
         if d is None:
             d = torch.ones_like(dp.data_dict[bary_node]["f"])
@@ -269,6 +273,8 @@ def _flat_grid_log_sinkhorn_reduction(f, d, ind, X, Y, epsilon):
     if f and d are both Vi then ind= 0
     if f is Vi and d is Vj then ind=1
     """
+    #something in numpy still
+
     # kernel computations - K @ a
     # main bottle neck
     if ind ==0:
