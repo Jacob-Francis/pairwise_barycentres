@@ -6,7 +6,8 @@ from mmuot import (
     sinkhorn_update,
     mmuot_sinkhorn_loop,
     mmuot_marginals,
-    mmuot_dual_cost    
+    mmuot_dual_cost , 
+    kernel_size,   
 )
 import numpy as np
 import networkx as nx
@@ -182,7 +183,7 @@ def test_costing_with_same_grid_uniform_density_uniform_measure_multi_it(
     assert torch.allclose(f_2.view(-1), f.view(-1), atol=1e-8), "Sinkhorn update failed"
 
     # calcaute mm cost
-    cost = mmuot_dual_cost(dp, epsilon, rho=1.0, aprox="balanced", prod=False)
+    cost = mmuot_dual_cost(dp, epsilon, rho=1.0, aprox="balanced", prod=False, no_kernal_term=True)
 
     # Numpy version - only calculated f0 and f2; f1 is zero
     dual_cost = 0.0
@@ -428,7 +429,7 @@ def test_costing_with_different_grid_random_density_prod_true(
     assert torch.allclose(f2.view(-1), f.view(-1), atol=1e-8), "Sinkhorn update failed"
 
     # calcaute mm cost
-    cost = mmuot_dual_cost(dp, epsilon, rho=1.0, aprox="balanced", prod=True)
+    cost = mmuot_dual_cost(dp, epsilon, rho=1.0, aprox="balanced", prod=True, no_kernal_term=True)
 
     # Numpy version - only calculated f0 and f2; f1 is zero
     dual_cost = 0.0
@@ -439,6 +440,287 @@ def test_costing_with_different_grid_random_density_prod_true(
 
     print(cost.cpu().numpy(), dual_cost.cpu().numpy())
     assert np.isclose(cost.cpu().numpy(), dual_cost.cpu().numpy(), atol=1e-8), "Dual costing failed"
+
+
+# ------------------------------------------------------------------------------
+#         TESTING KERNEL REDUCTION
+# ------------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "n1, n2, m1, m2, L, grid_type",
+    [
+        (11, 10, 5, 7, 0.9, "flat"),
+        (8, 8, 13, 8, 3.5, "tensor"),
+        (12, 11, 9, 9, 2.0, "tuple"),
+    ],
+)  # noqa: E501
+def test_kernel_with_different_grid_random_density_prod_true(
+    n1, n2, m1, m2, L, grid_type
+):
+
+    np.random.seed(n1 * n2 * m1 * m2)
+    members = 2
+    # tuple toggle for torch testing
+    toggle = True
+    if grid_type == "flat":
+        data = []
+        Y = torch.cartesian_prod(
+            torch.linspace(0, L, m1), torch.linspace(0, L, m2)
+        ).type(torch.DoubleTensor)
+        density = torch.abs(torch.randn(m1 * m2))
+        data.append([density, Y])  # central grid
+        for m in range(members):  # member grids
+            X = torch.cartesian_prod(
+                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+            ).type(torch.DoubleTensor)
+            density = torch.abs(torch.randn_like(X[:, 0]))
+            data.append([density, X])  # uniform density, grid will equal everywhere
+
+    elif grid_type == "tensor":
+        data = []
+        Y = torch.stack(
+            torch.meshgrid(
+                torch.linspace(0, L, m1), torch.linspace(0, L, m2), indexing="ij"
+            ),
+            dim=-1,
+        ).type(torch.DoubleTensor)
+        density = torch.abs(torch.randn_like(Y[..., 0]))
+        data.append([density, Y])  # central grid
+        for m in range(members):
+            X = torch.stack(
+                torch.meshgrid(
+                    torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                    torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+                    indexing="ij",
+                ),
+                dim=-1,
+            ).type(torch.DoubleTensor)
+            density = torch.abs(torch.randn_like(X[..., 0]))
+            data.append([density, X])
+
+    elif grid_type == "tuple":
+        toggle = False
+        data = []
+        Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
+        density = torch.abs(torch.randn(m1, m2))
+        data.append([density, Y])  # central grid
+        for m in range(members):
+            X = (
+                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+            )
+            density = torch.abs(torch.randn(len(X[0]), len(X[1])))
+            data.append([density, X])
+
+    # generate the barycentre dataprocessor class which will store all objects
+    # of interest. It will also create the correct graph, and given no density of graphs
+    # will create uniform densities on the grids
+    dp = generate_mmuotdataprocessor_star_graph(data, grid=None, clear_grid=False)
+    epsilon = dp._torch_numpy_process(
+        max(L / np.sqrt(n1 * n2), L / np.sqrt(m1 * m2))
+    ).view(-1, 1)
+
+    # kernal size reduction 
+    kernel_sum = kernel_size(dp, epsilon, prod=True)
+
+    alpha = alpha_reduction(dp, 0, 1, epsilon=epsilon, prod=True)
+
+    # Torch version for comparison
+    c_0_1_true = (
+        torch.exp(
+            (
+                - torch.cdist(
+                    (
+                        dp.data_dict[1]["grid"].view(-1, 2).to(alpha)
+                        if toggle
+                        else torch.cartesian_prod(*dp.data_dict[1]["grid"]).to(alpha)
+                    ),
+                    (
+                        dp.data_dict[0]["grid"].view(-1, 2).to(alpha)
+                        if toggle
+                        else torch.cartesian_prod(*dp.data_dict[0]["grid"]).to(alpha)
+                    ),
+                )
+                ** 2
+                * dp.graph[0][1]["weight"]
+                / 2
+            )
+            / epsilon
+        )
+        * dp.data_dict[1]["density"].view(-1, 1)
+    )
+
+    # Torch version for comparison
+    c_0_2_true = (
+        torch.exp(
+            (
+                - torch.cdist(
+                    (
+                        dp.data_dict[2]["grid"].view(-1, 2).to(alpha)
+                        if toggle
+                        else torch.cartesian_prod(*dp.data_dict[2]["grid"]).to(alpha)
+                    ),
+                    (
+                        dp.data_dict[0]["grid"].view(-1, 2).to(alpha)
+                        if toggle
+                        else torch.cartesian_prod(*dp.data_dict[0]["grid"]).to(alpha)
+                    ),
+                )
+                ** 2
+                * dp.graph[0][2]["weight"]
+                / 2
+            )
+            / epsilon
+        )
+        * dp.data_dict[2]["density"].view(-1, 1)
+    )
+
+    # Need some sort of 3D broadcasting here
+    sum = (c_0_2_true.T.unsqueeze(1) * c_0_1_true.T.unsqueeze(2) * dp.data_dict[0]["density"].view(-1, 1, 1)).sum()
+
+    print(sum.squeeze(), kernel_sum.squeeze())
+    assert torch.allclose(
+        sum.view(-1), kernel_sum.view(-1), atol=1e-8
+    ), "Kernel size reduction failed"
+
+
+@pytest.mark.parametrize(
+    "n1, n2, m1, m2, L, grid_type",
+    [
+        (11, 10, 5, 7, 0.9, "flat"),
+        (8, 8, 13, 8, 3.5, "tensor"),
+        (12, 11, 9, 9, 2.0, "tuple"),
+    ],
+)  # noqa: E501
+def test_kernel_with_different_grid_random_density_prod_false(
+    n1, n2, m1, m2, L, grid_type
+):
+
+    np.random.seed(n1 * n2 * m1 * m2)
+    members = 2
+    # tuple toggle for torch testing
+    toggle = True
+    if grid_type == "flat":
+        data = []
+        Y = torch.cartesian_prod(
+            torch.linspace(0, L, m1), torch.linspace(0, L, m2)
+        ).type(torch.DoubleTensor)
+        density = torch.abs(torch.randn(m1 * m2))
+        data.append([density, Y])  # central grid
+        for m in range(members):  # member grids
+            X = torch.cartesian_prod(
+                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+            ).type(torch.DoubleTensor)
+            density = torch.abs(torch.randn_like(X[:, 0]))
+            data.append([density, X])  # uniform density, grid will equal everywhere
+
+    elif grid_type == "tensor":
+        data = []
+        Y = torch.stack(
+            torch.meshgrid(
+                torch.linspace(0, L, m1), torch.linspace(0, L, m2), indexing="ij"
+            ),
+            dim=-1,
+        ).type(torch.DoubleTensor)
+        density = torch.abs(torch.randn_like(Y[..., 0]))
+        data.append([density, Y])  # central grid
+        for m in range(members):
+            X = torch.stack(
+                torch.meshgrid(
+                    torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                    torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+                    indexing="ij",
+                ),
+                dim=-1,
+            ).type(torch.DoubleTensor)
+            density = torch.abs(torch.randn_like(X[..., 0]))
+            data.append([density, X])
+
+    elif grid_type == "tuple":
+        toggle = False
+        data = []
+        Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
+        density = torch.abs(torch.randn(m1, m2))
+        data.append([density, Y])  # central grid
+        for m in range(members):
+            X = (
+                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
+                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+            )
+            density = torch.abs(torch.randn(len(X[0]), len(X[1])))
+            data.append([density, X])
+
+    # generate the barycentre dataprocessor class which will store all objects
+    # of interest. It will also create the correct graph, and given no density of graphs
+    # will create uniform densities on the grids
+    dp = generate_mmuotdataprocessor_star_graph(data, grid=None, clear_grid=False)
+    epsilon = dp._torch_numpy_process(
+        max(L / np.sqrt(n1 * n2), L / np.sqrt(m1 * m2))
+    ).view(-1, 1)
+
+    # kernal size reduction 
+    kernel_sum = kernel_size(dp, epsilon, prod=False)
+
+    alpha = alpha_reduction(dp, 0, 1, epsilon=epsilon, prod=False)
+
+    # Torch version for comparison
+    c_0_1_true = (
+        torch.exp(
+            (
+                - torch.cdist(
+                    (
+                        dp.data_dict[1]["grid"].view(-1, 2).to(alpha)
+                        if toggle
+                        else torch.cartesian_prod(*dp.data_dict[1]["grid"]).to(alpha)
+                    ),
+                    (
+                        dp.data_dict[0]["grid"].view(-1, 2).to(alpha)
+                        if toggle
+                        else torch.cartesian_prod(*dp.data_dict[0]["grid"]).to(alpha)
+                    ),
+                )
+                ** 2
+                * dp.graph[0][1]["weight"]
+                / 2
+            )
+            / epsilon
+        )
+        / np.prod(dp.data_dict[1]["f"].shape)
+    )
+
+    # Torch version for comparison
+    c_0_2_true = (
+        torch.exp(
+            (
+                - torch.cdist(
+                    (
+                        dp.data_dict[2]["grid"].view(-1, 2).to(alpha)
+                        if toggle
+                        else torch.cartesian_prod(*dp.data_dict[2]["grid"]).to(alpha)
+                    ),
+                    (
+                        dp.data_dict[0]["grid"].view(-1, 2).to(alpha)
+                        if toggle
+                        else torch.cartesian_prod(*dp.data_dict[0]["grid"]).to(alpha)
+                    ),
+                )
+                ** 2
+                * dp.graph[0][2]["weight"]
+                / 2
+            )
+            / epsilon
+        )
+        / np.prod(dp.data_dict[2]["f"].shape)
+    )
+
+    # Need some sort of 3D broadcasting here
+    sum = (c_0_2_true.T.unsqueeze(1) * c_0_1_true.T.unsqueeze(2) / np.prod(dp.data_dict[0]["f"].shape)).sum()
+
+    print(sum.squeeze(), kernel_sum.squeeze())
+    assert torch.allclose(
+        sum.view(-1), kernel_sum.view(-1), atol=1e-8
+    ), "Kernel size reduction failed"
 
 if __name__ == "__main__":
     import pytest

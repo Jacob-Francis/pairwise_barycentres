@@ -1,6 +1,6 @@
 import torch
 from graph_dp import SinkhornDataProcessor
-
+from .pykeops_formulas import chizat_reduction
 
 # ----------------------------------------------------------------------------------
 #     ENTROPY RELATED THINGS
@@ -119,20 +119,7 @@ def log_aprox_step(s, epsilon, rho, p, aprox="kl"):
         raise NotImplementedError("Only kl and balanced aprox implemented")
 
 
-def _dual_cost_data_term(a, data, aprox, epsilon, rho):
-    assert a.shape == data.shape, "Shapes of a and data should match"
 
-    if aprox == "kl":
-        return torch.sum(torch.where(data > 0, -rho * (
-            (a ** (-epsilon / rho) - 1) * data
-        ) ,  torch.zeros_like(data)))
-    elif aprox == "balanced":
-        return torch.sum(torch.where(data > 0, rho * (epsilon * torch.log(a) * data),  torch.zeros_like(data)))
-    elif aprox == "tv":
-        assert (epsilon * torch.log(torch.where(data > 0, a, torch.ones_like(a))) <= rho).all(), "a should be less than rho for tv aprox"
-        return torch.sum(torch.where(data > 0, rho * (-torch.maximum(-epsilon * torch.log(a), -rho)) * data, torch.zeros_like(data)))
-    else:
-        raise NotImplementedError("Only kl and balanced aprox implemented")
 
 
 # ------------------------------------------------------------------------------------------------
@@ -181,6 +168,7 @@ def _tensorised_sinkhorn_reduction(a, x1y1, x2y2, epsilon, d=None, ind=None):
     # kernel computations - K @ a
     # main bottle neck
     # return tensorise_f(torch.exp(-x1y1 / epsilon), torch.exp(-x2y2 / epsilon), a)
+
     if ind==0:
         return tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), a*d)
     elif ind==1:
@@ -338,3 +326,33 @@ def process_dict_for_barycentre(dp: SinkhornDataProcessor, debiasing=True):
 
         elif "grid" in dp.data_dict[edge2[0]]:
             pass  # we can use PyKeOps
+
+def _flat_grid_sinkhorn_reduction(a, X, Y, epsilon, d=None, ind=None):
+
+    # kernel computations - K @ a
+    # main bottle neck
+    if ind==0:
+        return chizat_reduction(X, Y, epsilon, a*d)
+    elif ind==1:
+        return d*chizat_reduction(X, Y, epsilon, a)
+    else:
+        return chizat_reduction(X, Y, epsilon, a)
+
+def _dual_cost_data_term(a, data, aprox, epsilon, rho):
+    '''
+    Handles the double negative inside here! Don't add another
+    '''
+
+    assert a.shape == data.shape, "Shapes of a and data should match"
+
+    if aprox == "kl":
+        return torch.sum(torch.where(data > 0, -rho * (
+            (a ** (-epsilon / rho) - 1) * data
+        ) ,  torch.zeros_like(data)))
+    elif aprox == "balanced":
+        return torch.sum(torch.where(data > 0, (epsilon * torch.log(a) * data),  torch.zeros_like(data)))
+    elif aprox == "tv":
+        assert (epsilon * torch.log(torch.where(data > 0, a, torch.ones_like(a))) <= rho).all(), "a should be less than rho for tv aprox"
+        return torch.sum(torch.where(data > 0, rho * (-torch.maximum(-epsilon * torch.log(a)/rho, -rho)) * data, torch.zeros_like(data)))
+    else:
+        raise NotImplementedError("Only kl and balanced aprox implemented")

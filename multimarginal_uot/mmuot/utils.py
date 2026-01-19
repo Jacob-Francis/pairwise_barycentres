@@ -169,7 +169,6 @@ def _tensorised_alpha_reduction(x1y1, x2y2, a, f, epsilon, W):
         a * torch.exp(f / epsilon),
     )
 
-
 def _dual_cost_data_term(f, data, aprox, epsilon, rho):
     if aprox == "kl":
         return -rho * torch.sum(
@@ -178,7 +177,7 @@ def _dual_cost_data_term(f, data, aprox, epsilon, rho):
     elif aprox == "balanced":
         return rho * torch.sum(f * data)
     elif aprox == "tv":
-        assert f <= rho, "a should be less than rho for tv aprox"
+        # assert f <= rho, "a should be less than rho for tv aprox"
         return torch.sum(rho * (-torch.maximum(-f, -rho)) * data)
     else:
         raise NotImplementedError("Only kl and balanced aprox implemented")

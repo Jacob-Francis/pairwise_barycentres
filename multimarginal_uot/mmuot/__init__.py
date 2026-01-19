@@ -5,4 +5,4 @@ from .mmuot_sinkhorn_graph_reductions import (
     generate_mmuotdataprocessor_star_graph,
     generate_mmuot_debiasing_dp
 )
-from .mmuot_costing import mmuot_dual_cost, mmuot_marginal_j, mmuot_marginals
+from .mmuot_costing import mmuot_dual_cost, mmuot_marginal_j, mmuot_marginals, kernel_size

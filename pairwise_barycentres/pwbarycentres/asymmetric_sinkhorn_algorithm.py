@@ -1,8 +1,7 @@
 import torch
 import numpy as np
 from graph_dp import SinkhornDataProcessor
-from .pykeops_formulas import chizat_marginals, chizat_reduction
-from .utils import chizat_proxdiv_step, tensorise_f, _dual_cost_data_term, generate_epsilon_list, process_dict_for_barycentre, _tensorised_sinkhorn_reduction
+from .utils import _flat_grid_sinkhorn_reduction, chizat_proxdiv_step, tensorise_f, generate_epsilon_list, process_dict_for_barycentre, _tensorised_sinkhorn_reduction
 from .marginals import (
     calculate_node_marginal,
     _tensorised_marginal_reduction,
@@ -21,6 +20,7 @@ def asymmetric_sinkhorn_algorithm(
     debiasing: bool = True,
     verbose: bool = False,
     debiasing_update_freq: int = 1,
+    mass_scaling=False,
 ):
     # shorten to pass around
     dp = data_processor
@@ -35,6 +35,19 @@ def asymmetric_sinkhorn_algorithm(
     barycentre = d.clone() / d.sum()
     barycentre_old = d.clone() / d.sum()
 
+    # mass sum term
+    mass_term = 0.0
+    for edge in dp.graph.edges:
+        mass_term += dp.graph.edges[edge]["weight"] * dp.data_dict[edge[1]]["density"].sum().item()
+    
+    # scale the abrycentre up and densities 
+    if mass_scaling:
+        print('Initial mass term', mass_term)
+        for edge in dp.graph.edges:
+            dp.data_dict[edge[0]]["density"] *= mass_term
+        barycentre *= mass_term
+        barycentre_old *= mass_term
+    
     if epsilon_annealing:
         epsilon_list = generate_epsilon_list(epsilon)
         count_epsilon = 0
@@ -80,6 +93,15 @@ def asymmetric_sinkhorn_algorithm(
         barycentre_old = barycentre.clone()
 
         barycentre = balanced_barycentre_updates(dp, d, eps)
+
+        # mass scaling
+        monitor_mass_stabilty = barycentre.sum().item()
+        if mass_scaling:
+            for _ in  range(3):
+                barycentre = torch.exp(mass_term - barycentre.sum()) * barycentre
+                # print('change in mass', barycentre.sum().item() - monitor_mass_stabilty, mass_term, barycentre.sum().item())
+                monitor_mass_stabilty = barycentre.sum().item()
+
 
         # calcualte error to old barycentre
         err_barycentres = torch.norm(barycentre - barycentre_old, p=float("inf")).item()
@@ -371,173 +393,5 @@ def balanced_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon):
 
     return barycentre
 
-def asymmetric_cost(
-    dp: SinkhornDataProcessor,
-    epsilon,
-    rho,
-    aprox: str,
-    debiasing: bool = True,
-    verbose: bool = False,
-):
-
-    epsilon = dp._torch_numpy_process(epsilon).view(-1, 1)
-    rho = dp._torch_numpy_process(rho)
-
-    us_e = []
-    for edge in dp.graph.edges:
-        weighting = dp.graph.edges[edge]["weight"]
-        unbal_sinkhorn_div = _asymmetric_individual_edge_cost(
-            dp, edge, epsilon, rho, aprox, debiasing
-        )
-        us_e.append(unbal_sinkhorn_div * weighting)
-
-    if debiasing:
-        # We need the last few terms
-        d = dp.data_dict[edge[0]]["debiased_potential"]
-        debiasing_term = _calculate_debiasing_potential_symmetric_term(
-            d, dp, edge[0], epsilon
-        )
-
-        return sum(us_e) - epsilon * debiasing_term / 2, us_e
-    else:
-        return sum(us_e), us_e
 
 
-def _asymmetric_individual_edge_cost(dp, edge, epsilon, rho, aprox, debiasing):
-    bary_node = edge[0]
-    data_node = edge[1]
-
-    if debiasing:
-        if "debiased_potential" in dp.data_dict[bary_node]:
-            b = (
-                dp.data_dict[bary_node]["a"]
-                * dp.data_dict[bary_node]["debiased_potential"]
-            )
-            a = dp.data_dict[data_node]["a"]
-        elif "debiased_potential" in dp.data_dict[data_node]:
-            raise Warning("No debiasing potentials should be attached to the data")
-        else:
-            raise Warning(
-                "No debiasing potentials attached to either node, yet using debiasing"
-            )
-
-        if (
-            "debiased_potential" in dp.data_dict[bary_node]
-            and "debiased_potential" in dp.data_dict[data_node]
-        ):
-            raise Warning(
-                "Both nodes have debiasing potentials attached, this is unexpected behaviour"
-            )
-    else:
-        a = dp.data_dict[data_node]["a"]
-        b = dp.data_dict[bary_node]["a"]
-
-    # Have sufficent information for term 1 and term 2 of dual cost
-    term1 = _dual_cost_data_term(
-        a, dp.data_dict[data_node]["density"], aprox, epsilon, rho
-    )
-    term2 = _dual_cost_data_term(
-        b, dp.data_dict[bary_node]["density"], "balanced", epsilon, rho
-    )
-    term3 = calculate_node_marginal(dp, bary_node, epsilon, debiasing)[0].sum()
-
-    # final constant <K>
-    term4 = _calculate_dual_cost_constant(dp, edge, epsilon, debiasing)
-
-    return term1 + term2 - epsilon * (term3 - term4)
-
-
-def _calculate_dual_cost_constant(dp, edge, epsilon, debiasing):
-    """
-    we can hack the marginal reductions for find the cost constant summation <K>
-    by using ones vectors for ai and bj
-    """
-
-    bary_node = edge[0]
-    data_node = edge[1]
-
-    if debiasing:
-        if "debiased_potential" in dp.data_dict[bary_node]:
-            b = (
-                torch.ones_like(dp.data_dict[bary_node]["a"])
-                * dp.data_dict[bary_node]["debiased_potential"]
-            )
-            a = torch.ones_like(dp.data_dict[data_node]["a"])
-        elif "debiased_potential" in dp.data_dict[data_node]:
-            raise Warning("No debiasing potentials should be attached to the data")
-        else:
-            raise Warning(
-                "No debiasing potentials attached to either node, yet using debiasing"
-            )
-
-        if (
-            "debiased_potential" in dp.data_dict[bary_node]
-            and "debiased_potential" in dp.data_dict[data_node]
-        ):
-            raise Warning(
-                "Both nodes have debiasing potentials attached, this is unexpected behaviour"
-            )
-    else:
-        a = torch.ones_like(dp.data_dict[data_node]["a"])
-        b = torch.ones_like(dp.data_dict[bary_node]["a"])
-
-    # These terms are the same as the marginal term reductions
-    if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
-        # we can tensorise
-        cost_constant = _tensorised_marginal_reduction(
-            dp.data_dict[edge]["x1y1"],  # either order tensorise_f will sort it
-            dp.data_dict[edge]["x2y2"],
-            epsilon,
-            a,
-            b,
-        )
-    elif "grid" in dp.data_dict[data_node] and "grid" in dp.data_dict[bary_node]:
-        # we can use PyKeOps
-        cost_constant = _flat_grid_marginal_reduction(
-            dp.data_dict[data_node]["grid"],
-            dp.data_dict[bary_node]["grid"],
-            epsilon,
-            a,
-            b,
-        )
-
-    return cost_constant.sum()
-
-
-def _flat_grid_sinkhorn_reduction(a, X, Y, epsilon, d=None, ind=None):
-
-    # kernel computations - K @ a
-    # main bottle neck
-    if ind==0:
-        return chizat_reduction(X, Y, epsilon, a*d)
-    elif ind==1:
-        return d*chizat_reduction(X, Y, epsilon, a)
-    else:
-        return chizat_reduction(X, Y, epsilon, a)
-
-def _calculate_debiasing_potential_symmetric_term(d, dp, node, epsilon):
-    """
-    we can hack the marginal reductions for find the cost constant summation <K>
-    by using ones vectors for ai and bj
-    """
-
-    if "x1x1" in dp.data_dict[node] and "x2x2" in dp.data_dict[node]:
-        # we can tensorise
-        cost_constant = _tensorised_marginal_reduction(
-            dp.data_dict[node]["x1x1"],  # either order tensorise_f will sort it
-            dp.data_dict[node]["x2x2"],
-            epsilon,
-            d - 1,
-            d - 1,
-        )
-    elif "grid" in dp.data_dict[node]:
-        # we can use PyKeOps
-        cost_constant = _flat_grid_marginal_reduction(
-            dp.data_dict[node]["grid"],
-            dp.data_dict[node]["grid"],
-            epsilon,
-            d - 1,
-            d - 1,
-        )
-
-    return cost_constant.sum()
