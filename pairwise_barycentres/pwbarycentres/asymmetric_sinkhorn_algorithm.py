@@ -21,6 +21,7 @@ def asymmetric_sinkhorn_algorithm(
     verbose: bool = False,
     debiasing_update_freq: int = 1,
     mass_scaling=False,
+    fixed_barycentre=None
 ):
     # shorten to pass around
     dp = data_processor
@@ -32,16 +33,24 @@ def asymmetric_sinkhorn_algorithm(
 
     # Initalise the deibasing potential with barycentre shape
     d = dp._torch_numpy_process(torch.ones_like(dp.data_dict[0]["density"]))
-    barycentre = d.clone() / d.sum()
-    barycentre_old = d.clone() / d.sum()
+
+    if fixed_barycentre is None:
+        barycentre = d.clone() / d.sum()
+        barycentre_old = d.clone() / d.sum()
+    else:
+        barycentre = dp._torch_numpy_process(fixed_barycentre).reshape(*d.shape)
+        barycentre_old = dp._torch_numpy_process(fixed_barycentre.clone()).reshape(*d.shape)
+        # update the barycentre in the dictionary
+        for edge in dp.graph.edges:
+            dp.data_dict[edge[0]]["density"] = barycentre
 
     # mass sum term
     mass_term = 0.0
     for edge in dp.graph.edges:
         mass_term += dp.graph.edges[edge]["weight"] * dp.data_dict[edge[1]]["density"].sum().item()
     
-    # scale the abrycentre up and densities 
-    if mass_scaling:
+    # scale the barycentre up and densities 
+    if mass_scaling and fixed_barycentre is None:
         print('Initial mass term', mass_term)
         for edge in dp.graph.edges:
             dp.data_dict[edge[0]]["density"] *= mass_term
@@ -77,54 +86,58 @@ def asymmetric_sinkhorn_algorithm(
 
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[1]
-            new_b = sinkhorn_update(dp, edge[1], edge, eps, rho, aprox, d, debiasing=True)
+            new_b = sinkhorn_update(dp, edge[1], edge, eps, rho, aprox, d, debiasing=debiasing)
             # new_b = sinkhorn_update(dp, edge[1], edge, eps, rho, aprox, torch.ones_like(d), debiasing=False)
 
             # calculate quasi convergnece
 
             err_potentials = max(
                 err_potentials,
-                torch.norm(new_b - dp.data_dict[edge[1]]["a"], p=float("inf")).item(),
+                torch.norm(torch.log(new_b) - torch.log(dp.data_dict[edge[1]]["a"]), p=float("inf")).item(),
             )
             dp.data_dict[edge[1]]["a"] = new_b
 
         # Barycentre updates and update barycentre in dictionary
         # if debiasing_update_freq > 0 and count_iterates % debiasing_update_freq == 0:
-        barycentre_old = barycentre.clone()
+        if fixed_barycentre is None:
+            barycentre_old = barycentre.clone()
 
-        barycentre = balanced_barycentre_updates(dp, d, eps)
+            barycentre = balanced_barycentre_updates(dp, d, eps)
 
-        # mass scaling
-        monitor_mass_stabilty = barycentre.sum().item()
-        if mass_scaling:
-            for _ in  range(3):
-                barycentre = torch.exp(mass_term - barycentre.sum()) * barycentre
-                # print('change in mass', barycentre.sum().item() - monitor_mass_stabilty, mass_term, barycentre.sum().item())
-                monitor_mass_stabilty = barycentre.sum().item()
+            # mass scaling
+            monitor_mass_stabilty = barycentre.sum().item()
+            if mass_scaling:
+                for _ in  range(3):
+                    barycentre = torch.exp(mass_term - barycentre.sum()) * barycentre
+                    # print('change in mass', barycentre.sum().item() - monitor_mass_stabilty, mass_term, barycentre.sum().item())
+                    monitor_mass_stabilty = barycentre.sum().item()
 
 
-        # calcualte error to old barycentre
-        err_barycentres = torch.norm(barycentre - barycentre_old, p=float("inf")).item()
+            # calcualte error to old barycentre
+            err_barycentres = torch.norm(barycentre - barycentre_old, p=float("inf")).item()
 
-        # update the barycentre in the dictionary
-        for edge in dp.graph.edges:
-            dp.data_dict[edge[0]]["density"] = barycentre
+            # update the barycentre in the dictionary
+            for edge in dp.graph.edges:
+                dp.data_dict[edge[0]]["density"] = barycentre
+        else:
+            # need another error term to check convergence
+            err_barycentres = err_potentials
 
         # project on second edge corresponding to the barycentre
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[0]
-            new_a = sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced", d=d, debiasing=True)
+            new_a = sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced", d=d, debiasing=debiasing)
             # new_a = sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced", d=torch.ones_like(d), debiasing=False)
 
             # calculate quasi convergnece
             err_potentials = max(
                 err_potentials,
-                torch.norm(new_a - dp.data_dict[edge[0]]["a"], p=float("inf")).item(),
+                torch.norm(torch.log(new_a) - torch.log(dp.data_dict[edge[0]]["a"]), p=float("inf")).item(),
             )
-            dp.data_dict[edge[0]]["a"] = new_a # multiply by debiasing potential
+            dp.data_dict[edge[0]]["a"] = new_a # multiply by debiasing potential                
 
         # Update debiasing potential
-        if debiasing:
+        if debiasing and fixed_barycentre is None:
             if debiasing_update_freq > 0 and count_iterates % debiasing_update_freq == 0:
                 d = debiasing_dual_potential_update(dp, d, barycentre, eps)
             elif debiasing_update_freq == 0:
@@ -175,35 +188,6 @@ def asymmetric_sinkhorn_algorithm(
             ), "Debiasing potential should be the same object"
 
     return data_processor, barycentre, potential_error_list, barycentre_error_list
-
-
-# def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon):
-#     """
-
-#     :param dp: Description
-#     :param k: Description
-#     :param edge: Description
-#     :param epsilon: Description
-#     """
-#     assert k in edge
-
-#     # Can I tensorise?
-#     if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
-#         return _tensorised_sinkhorn_reduction(
-#             dp.data_dict[k]["a"],
-#             dp.data_dict[edge]["x1y1"],
-#             dp.data_dict[edge]["x2y2"],
-#             epsilon,
-#         )
-#     # Otherwise PyKeOps
-#     elif "grid" in dp.data_dict[edge[0]] and "grid" in dp.data_dict[edge[1]]:
-
-#         return _flat_grid_sinkhorn_reduction(
-#             dp.data_dict[k]["a"],
-#             dp.data_dict[k]["grid"],
-#             dp.data_dict[edge[1] if edge[0] == k else edge[0]]["grid"],
-#             epsilon,
-#         )
 
 def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon, d=None, debiasing=False):
     """

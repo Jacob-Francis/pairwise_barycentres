@@ -16,31 +16,40 @@ def asymmetric_cost(
     aprox: str,
     debiasing: bool = True,
     verbose: bool = False,
+    fixed_barycentre=None
 ):
 
     epsilon = dp._torch_numpy_process(epsilon).view(-1, 1)
     rho = dp._torch_numpy_process(rho)
 
     us_e = []
+    uot_mu_mu = []
     for edge in dp.graph.edges:
         weighting = dp.graph.edges[edge]["weight"]
         unbal_sinkhorn_div = _asymmetric_individual_edge_cost(
             dp, edge, epsilon, rho, aprox, debiasing
         )
         us_e.append(unbal_sinkhorn_div * weighting)
-
+        
         # solve UOT(mu_I, mu_I)
-        cost = symmetric_cost(dp, edge[1], edge, epsilon, rho, aprox, max_iterates=2000, tol=1e-9)
+        if debiasing:
+            cost = symmetric_cost(dp, edge[1], edge, epsilon, rho, aprox, max_iterates=2000, tol=1e-9)
+            uot_mu_mu.append(cost * weighting)
 
     if debiasing:
         # We need the last few terms
-        d = dp.data_dict[edge[0]]["debiased_potential"]
-        # calcualte <d-1 K (d-1)>
-        debiasing_term = _calculate_debiasing_potential_symmetric_term(
-            d, dp, edge[0], epsilon
-        )
+        if fixed_barycentre is None:
+            d = dp.data_dict[edge[0]]["debiased_potential"]
+            # calcualte <d-1 K (d-1)>
+            debiasing_term = _calculate_debiasing_potential_symmetric_term(
+                d, dp, edge[0], epsilon
+            )
+        else:
+            # calcualte UOT_(e,e)
+            # can choose any edge since they should be the same
+            debiasing_term = symmetric_cost(dp, edge[0], edge, epsilon, rho, aprox='balanced', max_iterates=2000, tol=1e-9)
 
-        return sum(us_e) - epsilon * debiasing_term / 2, us_e
+        return sum(us_e) - epsilon * debiasing_term / 2 - epsilon* torch.stack(uot_mu_mu).sum()/2, us_e
     else:
         return sum(us_e), us_e
     
@@ -49,28 +58,6 @@ def _asymmetric_individual_edge_cost(dp, edge, epsilon, rho, aprox, debiasing):
     bary_node = edge[0]
     data_node = edge[1]
 
-    # if debiasing:
-    #     if "debiased_potential" in dp.data_dict[bary_node]:
-    #         b = (
-    #             dp.data_dict[bary_node]["a"]
-    #             * dp.data_dict[bary_node]["debiased_potential"]
-    #         )
-    #         a = dp.data_dict[data_node]["a"]
-    #     elif "debiased_potential" in dp.data_dict[data_node]:
-    #         raise Warning("No debiasing potentials should be attached to the data")
-    #     else:
-    #         raise Warning(
-    #             "No debiasing potentials attached to either node, yet using debiasing"
-    #         )
-
-    #     if (
-    #         "debiased_potential" in dp.data_dict[bary_node]
-    #         and "debiased_potential" in dp.data_dict[data_node]
-    #     ):
-    #         raise Warning(
-    #             "Both nodes have debiasing potentials attached, this is unexpected behaviour"
-    #         )
-    # else:
     a = dp.data_dict[data_node]["a"]
     b = dp.data_dict[bary_node]["a"]
 
