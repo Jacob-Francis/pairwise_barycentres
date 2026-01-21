@@ -7,7 +7,7 @@ from .marginals import (
 from graph_dp import SinkhornDataProcessor
 from .symmetric_problem import symmetric_cost
 import torch
-from .utils import _dual_cost_data_term
+from .utils import _dual_cost_data_term, _dual_cost_data_term_f_potential
 
 def asymmetric_cost(
     dp: SinkhornDataProcessor,
@@ -58,19 +58,34 @@ def _asymmetric_individual_edge_cost(dp, edge, epsilon, rho, aprox, debiasing):
     bary_node = edge[0]
     data_node = edge[1]
 
-    a = dp.data_dict[data_node]["a"]
-    b = dp.data_dict[bary_node]["a"]
 
-    # Have sufficent information for term 1 and term 2 of dual cost
+    try: 
+        a = dp.data_dict[data_node]["a"]
+        b = dp.data_dict[bary_node]["a"]
 
-    # -<-f, alpha>
-    term1 = _dual_cost_data_term(
-        a, dp.data_dict[data_node]["density"], aprox, epsilon, rho
-    )
-    # -<-g, beta>
-    term2 = _dual_cost_data_term(
-        b, dp.data_dict[bary_node]["density"], "balanced", epsilon, rho
-    )
+        # Have sufficent information for term 1 and term 2 of dual cost
+
+        # -<-f, alpha>
+        term1 = _dual_cost_data_term(
+            a, dp.data_dict[data_node]["density"], aprox, epsilon, rho
+        )
+        # -<-g, beta>
+        term2 = _dual_cost_data_term(
+            b, dp.data_dict[bary_node]["density"], "balanced", epsilon, rho
+        )
+    except KeyError:
+        f = dp.data_dict[data_node]["f"]
+        g = dp.data_dict[bary_node]["f"]
+
+        # -<-f, alpha>
+        term1 = _dual_cost_data_term_f_potential(
+            f, dp.data_dict[data_node]["density"], aprox, epsilon, rho
+        )
+        # -<-g, beta>
+        term2 = _dual_cost_data_term_f_potential(
+            g, dp.data_dict[bary_node]["density"], "balanced", epsilon, rho
+        )
+    
     # <e^{f+g-c}d>=<a.Kbd>
     term3 = calculate_node_marginal(dp, bary_node, epsilon, debiasing)[0].sum()
 

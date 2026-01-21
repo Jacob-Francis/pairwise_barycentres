@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from graph_dp import SinkhornDataProcessor
-from .pykeops_formulas import chizat_marginals
+from .pykeops_formulas import chizat_marginals, fg_reduction_ii, fg_reduction_ij
 from .utils import tensorise_f
 
 
@@ -54,54 +54,134 @@ def calculate_node_marginal(dp: SinkhornDataProcessor, node, epsilon, debiasing)
             else (neighbour, node)
         )
 
-        if debiasing:
-            if "debiased_potential" in dp.data_dict[node]:
-                b = dp.data_dict[node]["a"] * dp.data_dict[node]["debiased_potential"]
-                a = dp.data_dict[neighbour]["a"]
-            elif "debiased_potential" in dp.data_dict[neighbour]:
-                b = dp.data_dict[node]["a"]
-                a = (
+        if 'a' in dp.data_dict[node] and 'a' in dp.data_dict[neighbour]:
+            marginal = ab_potential_marginal_reduction(dp, node, epsilon, debiasing, neighbour, edge)
+        elif 'f' in dp.data_dict[node] and 'f' in dp.data_dict[neighbour]:
+            marginal = fg_potential_marginal_reduction(dp, node, epsilon, debiasing, neighbour, edge)
+        else:
+            raise Warning(
+                "Node potentials not found or do not match between nodes"
+            )
+
+    error = torch.norm(marginal - node_data["density"], p=float("inf")).item()
+
+    return marginal, error
+
+def ab_potential_marginal_reduction(dp, node, epsilon, debiasing, neighbour, edge):
+    if debiasing:
+        if "debiased_potential" in dp.data_dict[node]:
+            b = dp.data_dict[node]["a"] * dp.data_dict[node]["debiased_potential"]
+            a = dp.data_dict[neighbour]["a"]
+        elif "debiased_potential" in dp.data_dict[neighbour]:
+            b = dp.data_dict[node]["a"]
+            a = (
                     dp.data_dict[neighbour]["a"]
                     * dp.data_dict[neighbour]["debiased_potential"]
                 )
-            else:
-                raise Warning(
+        else:
+            raise Warning(
                     "No debiasing potentials attached to either node, yet using debiasing"
                 )
 
-            if (
+        if (
                 "debiased_potential" in dp.data_dict[node]
                 and "debiased_potential" in dp.data_dict[neighbour]
             ):
-                raise Warning(
+            raise Warning(
                     "Both nodes have debiasing potentials attached, this is unexpected behaviour"
                 )
-        else:
-            a = dp.data_dict[neighbour]["a"]
-            b = dp.data_dict[node]["a"]
+    else:
+        a = dp.data_dict[neighbour]["a"]
+        b = dp.data_dict[node]["a"]
 
-        if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
+    if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
             # we can tensorise
-            marginal = _tensorised_marginal_reduction(
+        marginal = _tensorised_marginal_reduction(
                 dp.data_dict[edge]["x1y1"],  # either order tensorise_f will sort it
                 dp.data_dict[edge]["x2y2"],
                 epsilon,
                 a,
                 b,
             )
-        elif "grid" in dp.data_dict[node] and "grid" in dp.data_dict[neighbour]:
+    elif "grid" in dp.data_dict[node] and "grid" in dp.data_dict[neighbour]:
             # we can use PyKeOps
-            marginal = _flat_grid_marginal_reduction(
+        marginal = _flat_grid_marginal_reduction(
                 dp.data_dict[neighbour]["grid"],
                 dp.data_dict[node]["grid"],
                 epsilon,
                 a,
                 b,
             )
+        
+    return marginal
 
-    error = torch.norm(marginal - node_data["density"], p=float("inf")).item()
 
-    return marginal, error
+def fg_potential_marginal_reduction(dp, node, epsilon, debiasing, neighbour, edge):
+    if debiasing:
+        if "debiased_potential" in dp.data_dict[node]:
+            g = dp.data_dict[node]["f"] 
+            f = dp.data_dict[neighbour]["f"]
+            d = dp.data_dict[node]["debiased_potential"]
+            ind = 0 # d on node
+        elif "debiased_potential" in dp.data_dict[neighbour]:
+            g = dp.data_dict[node]["f"]
+            f = dp.data_dict[neighbour]["f"]
+            d = dp.data_dict[neighbour]["debiased_potential"]
+            ind = 1 # d on neighbour
+        else:
+            raise Warning(
+                    "No debiasing potentials attached to either node, yet using debiasing"
+                )
+
+        if (
+                "debiased_potential" in dp.data_dict[node]
+                and "debiased_potential" in dp.data_dict[neighbour]
+            ):
+            raise Warning(
+                    "Both nodes have debiasing potentials attached, this is unexpected behaviour"
+                )
+    else:
+        f = dp.data_dict[neighbour]["f"]
+        g = dp.data_dict[node]["f"]
+        d = None
+
+    if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
+            # we can tensorise
+        if d is None:
+            ind = 2 # don't multiply either.
+    
+        marginal = _tensorised_marginal_reduction(
+                dp.data_dict[edge]["x1y1"],  # either order tensorise_f will sort it
+                dp.data_dict[edge]["x2y2"],
+                epsilon,
+                torch.exp(f/epsilon)*d if ind==1 else torch.exp(f/epsilon),
+                torch.exp(g/epsilon)*d if ind==0 else torch.exp(g/epsilon),
+            )
+    elif "grid" in dp.data_dict[node] and "grid" in dp.data_dict[neighbour]:
+        # we can use PyKeOps
+        if d is None:
+            ind = 1 # doesn't matter since ii and ij differ by d summation
+    
+        if ind==1:
+            marginal = fg_reduction_ii(
+                Fi=f,
+                Gj=g,
+                Xi=dp.data_dict[neighbour]["grid"],
+                Yj=dp.data_dict[node]["grid"],
+                epsilon=epsilon,
+                ai=d,
+            )
+        elif ind==0:
+            marginal = fg_reduction_ij(
+                Fi=f,
+                Gj=g,
+                Xi=dp.data_dict[neighbour]["grid"],
+                Yj=dp.data_dict[node]["grid"],
+                epsilon=epsilon,
+                aj=d,
+            )
+        
+    return marginal
 
 
 # If debiasing we can 'attach' the debiasing potential to the marginal reduction
