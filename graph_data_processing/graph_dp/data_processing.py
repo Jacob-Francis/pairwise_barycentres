@@ -28,6 +28,7 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
         cuda_device=None,
         pykeops=True,
         free_grids=True,
+        verbose=False,
     ):
         """Provide a python dictionary with keys being the index of the data and keys, density, grid.
         If given a grid assume they all share one grid. It will ignore any keys inside the dictionary
@@ -61,6 +62,7 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
         self.graph = graph
         self.data_dict = data_dict
         self.pykeops = pykeops
+        self.verbose = verbose
 
         assert len(self.graph.nodes) == len(
             self.data_dict
@@ -115,10 +117,11 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
             )
 
         elif len(grid1.shape) == 3 and len(grid2.shape) == 3:
-            print(
-                'Any meshgrid inputs are assumed to be creating with indexing="ij":'
-                "For equally sized meshes this does not matter but for different sizes it does."
-            )
+            if self.verbose:
+                print(
+                    'Any meshgrid inputs are assumed to be creating with indexing="ij":'
+                    "For equally sized meshes this does not matter but for different sizes it does."
+                )
             n1, n2, n3 = grid1.shape
             m1, m2, m3 = grid2.shape
 
