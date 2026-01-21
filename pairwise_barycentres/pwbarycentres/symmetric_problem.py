@@ -59,7 +59,7 @@ def symmetric_cost(dp, k, edge, epsilon, rho, aprox, max_iterates=2000, tol=1e-9
             epsilon,
             sym_pot,
             sym_pot,
-        )
+        ).sum()
         cost_const = _flat_grid_marginal_reduction(
             grid, grid,
             epsilon,

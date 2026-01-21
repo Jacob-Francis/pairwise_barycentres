@@ -71,13 +71,13 @@ def _asymmetric_individual_edge_cost(dp, edge, epsilon, rho, aprox, debiasing):
     term2 = _dual_cost_data_term(
         b, dp.data_dict[bary_node]["density"], "balanced", epsilon, rho
     )
-    # <e^{f+g-c}d>
+    # <e^{f+g-c}d>=<a.Kbd>
     term3 = calculate_node_marginal(dp, bary_node, epsilon, debiasing)[0].sum()
 
     # final constant <Kd> 
     term4 = _calculate_dual_cost_constant(dp, edge, epsilon, debiasing)
 
-    return term1 + term2 - epsilon * term3
+    return term1 + term2 - epsilon * (term3 - term4)
 
 
 def _calculate_dual_cost_constant(dp, edge, epsilon, debiasing):
@@ -153,12 +153,14 @@ def _calculate_debiasing_potential_symmetric_term(d, dp, node, epsilon):
         )
     elif "grid" in dp.data_dict[node]:
         # we can use PyKeOps
+        print('devices:', dp.data_dict[node]["grid"].device, d.device, epsilon.device)
+
         cost_constant = _flat_grid_marginal_reduction(
             dp.data_dict[node]["grid"],
             dp.data_dict[node]["grid"],
             epsilon,
-            d - 1,
-            d - 1,
+            d.view(-1,1) - 1,
+            d.view(-1,1) - 1,
         )
 
     return cost_constant.sum()

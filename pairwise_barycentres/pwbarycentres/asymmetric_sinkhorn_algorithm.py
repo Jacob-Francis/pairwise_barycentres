@@ -39,7 +39,7 @@ def asymmetric_sinkhorn_algorithm(
         barycentre_old = d.clone() / d.sum()
     else:
         barycentre = dp._torch_numpy_process(fixed_barycentre).reshape(*d.shape)
-        barycentre_old = dp._torch_numpy_process(fixed_barycentre.clone()).reshape(*d.shape)
+        barycentre_old = dp._torch_numpy_process(fixed_barycentre).reshape(*d.shape)
         # update the barycentre in the dictionary
         for edge in dp.graph.edges:
             dp.data_dict[edge[0]]["density"] = barycentre
@@ -93,7 +93,7 @@ def asymmetric_sinkhorn_algorithm(
 
             err_potentials = max(
                 err_potentials,
-                torch.norm(torch.log(new_b) - torch.log(dp.data_dict[edge[1]]["a"]), p=float("inf")).item(),
+                torch.norm(torch.where(new_b > 0, torch.log(new_b) - torch.log(dp.data_dict[edge[1]]["a"]), torch.zeros_like(new_b)), p=float("inf")).item(),
             )
             dp.data_dict[edge[1]]["a"] = new_b
 
@@ -132,7 +132,7 @@ def asymmetric_sinkhorn_algorithm(
             # calculate quasi convergnece
             err_potentials = max(
                 err_potentials,
-                torch.norm(torch.log(new_a) - torch.log(dp.data_dict[edge[0]]["a"]), p=float("inf")).item(),
+                torch.norm(torch.where(new_a > 0, torch.log(new_a) - torch.log(dp.data_dict[edge[0]]["a"]), torch.zeros_like(new_a)), p=float("inf")).item(),
             )
             dp.data_dict[edge[0]]["a"] = new_a # multiply by debiasing potential                
 
