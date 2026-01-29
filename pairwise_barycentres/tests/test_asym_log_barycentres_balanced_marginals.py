@@ -92,14 +92,14 @@ def test_marginals_asym_log_bary_with_same_grid_uniform_density_without_debiasin
         ]  # less than tolerance
 
 
-    # cost, cost_list = asymmetric_cost(
-    #     data_processor, 1 / np.sqrt(n1 * n2), rho=1.0, aprox="balanced", debiasing=False
-    # )
+    cost, cost_list = asymmetric_cost(
+        data_processor, 1 / np.sqrt(n1 * n2), rho=1.0, aprox="balanced", debiasing=False
+    )
 
-    # # since balanced and equal weighting on all nodes the costs should be equal
-    # for k in cost_list:
-    #     for j in cost_list:
-    #         assert j == k
+    # since balanced and equal weighting on all nodes the costs should be equal
+    for k in cost_list:
+        for j in cost_list:
+            assert j == k
 
 
 @pytest.mark.parametrize(
@@ -186,14 +186,14 @@ def test_marginals_asym_log_bary_with_same_grid_uniform_density_with_debiasing(
             "error"
         ]  # less than tolerance
 
-    # cost, cost_list = asymmetric_cost(
-    #     data_processor, 1 / np.sqrt(n1 * n2), rho=1.0, aprox="balanced", debiasing=True
-    # )
+    cost, cost_list = asymmetric_cost(
+        data_processor, 1 / np.sqrt(n1 * n2), rho=1.0, aprox="balanced", debiasing=True
+    )
 
-    # # since balanced and equal weighting on all nodes the costs should be equal
-    # for k in cost_list:
-    #     for j in cost_list:
-    #         assert j == k
+    # since balanced and equal weighting on all nodes the costs should be equal
+    for k in cost_list:
+        for j in cost_list:
+            assert j == k
 
 
 # --------------------------------------------------------
@@ -277,18 +277,18 @@ def test_marginals_asym_log_bary_with_different_grid_uniform_density_without_deb
             "error"
         ]  # less than tolerance
 
-    # cost, cost_list = asymmetric_cost(
-    #     data_processor,
-    #     max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
-    #     rho=1.0,
-    #     aprox="balanced",
-    #     debiasing=False,
-    # )
+    cost, cost_list = asymmetric_cost(
+        data_processor,
+        max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
+        rho=1.0,
+        aprox="balanced",
+        debiasing=False,
+    )
 
-    # # since balanced and equal weighting on all nodes the costs should be equal
-    # for k in cost_list:
-    #     for j in cost_list:
-    #         assert j == k
+    # since balanced and equal weighting on all nodes the costs should be equal
+    for k in cost_list:
+        for j in cost_list:
+            assert j == k
 
 
 @pytest.mark.parametrize(
@@ -369,18 +369,18 @@ def test_marginals_asym_log_bary_with_different_grid_uniform_density_with_debias
             "error"
         ]  # less than tolerance
 
-    # cost, cost_list = asymmetric_cost(
-    #     data_processor,
-    #     max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
-    #     rho=1.0,
-    #     aprox="balanced",
-    #     debiasing=True,
-    # )
+    cost, cost_list = asymmetric_cost(
+        data_processor,
+        max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
+        rho=1.0,
+        aprox="balanced",
+        debiasing=True,
+    )
 
-    # # since balanced and equal weighting on all nodes the costs should be equal
-    # for k in cost_list:
-    #     for j in cost_list:
-    #         assert j == k
+    # since balanced and equal weighting on all nodes the costs should be equal
+    for k in cost_list:
+        for j in cost_list:
+            assert j == k
 
 
 # -------------------------------------------------------------------------------------------
