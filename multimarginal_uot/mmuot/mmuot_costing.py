@@ -165,7 +165,5 @@ def mmuot_dual_cost(
     # print('updated dual cost:', dual_cost, marginal.sum().item(), k_term)
     dual_cost -= epsilon.item() * (marginal.sum().item() - k_term)
 
-    print('final dual cost:', dual_cost)
-
     return dual_cost
 
