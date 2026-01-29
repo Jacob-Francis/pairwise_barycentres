@@ -172,6 +172,7 @@ def mmuot_sinkhorn_loop(
     prod=True,
     convergence_tracking=False,
     verbose=False,
+    barycentre=False
 ):
 
     # Initialisations
@@ -202,11 +203,11 @@ def mmuot_sinkhorn_loop(
 
         # root node isn't enforces when going over edges
         # Sinkhorn update (including aprox relaxation)
-        dp.data_dict[v0]["f"], er = sinkhorn_update(
-            dp, v0, epsilon, rho, aprox=aprox, prod=prod
-        )
-
-        err = max(err, er)
+        if not barycentre:
+            dp.data_dict[v0]["f"], er = sinkhorn_update(
+                dp, v0, epsilon, rho, aprox=aprox, prod=prod
+            )
+            err = max(err, er)
 
         for p_j, j in dfs_edges:
             # update alpha
