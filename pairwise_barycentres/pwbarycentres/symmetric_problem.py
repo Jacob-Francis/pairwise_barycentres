@@ -73,7 +73,8 @@ def symmetric_cost(dp, k, edge, epsilon, rho, aprox, max_iterates=2000, tol=1e-9
 def symmetric_algorithm(dp, k, edge, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
     update_method = symmetric_mat_vec_chizat_method(dp, k, edge, epsilon, rho, aprox)
 
-    sym_pot_0 = dp.data_dict[k]['a']
+    # I'm not sure which is better to do it in, it shoudl converg fast anyway
+    sym_pot_0 = dp.data_dict[k]['a'] if 'a' in dp.data_dict[k] else torch.exp(dp.data_dict[k]['f']/epsilon)
     sym_pot, err = symmetric_sinkhorn(sym_pot_0, update_method, max_iterates, tol)
 
     if err > tol:
