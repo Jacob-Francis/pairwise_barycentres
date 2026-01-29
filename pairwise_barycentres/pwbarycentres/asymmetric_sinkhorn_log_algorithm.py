@@ -156,6 +156,8 @@ def asymmetric_sinkhorn_log_algorithm(
 
 def _log_reduction_for_sinkhorn(dp, k, edge, epsilon, d=None, debiasing=True):
     """
+    Log version no? 
+
     Returns the reduction summing over node k 
     sum_k exp((f_k - 0.5||xk - yj||^2) / epsilon) * d_{j/k}
 
