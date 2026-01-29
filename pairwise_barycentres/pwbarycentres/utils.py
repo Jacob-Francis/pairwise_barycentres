@@ -100,10 +100,10 @@ def kl_log_aprox(s, epsilon, rho, p, tol=1e-12):
         _description_
     """
     # ToD(o - do i return zero or s?
-    return  torch.where(p>tol, (s - epsilon*torch.log(p)) * rho/(epsilon + rho), torch.zeros_like(s))
+    return  torch.where(p>tol, (s - epsilon*torch.log(p)) * rho/(epsilon + rho), 1e3*torch.ones_like(s))
 
 def balanced_log_aprox(s, epsilon, rho, p, tol=1e-12):
-    return torch.where(p>tol, s - epsilon*torch.log(p), torch.zeros_like(s))
+    return torch.where(p>tol, s - epsilon*torch.log(p), 1e3*torch.ones_like(s))
 
 def log_aprox_step(s, epsilon, rho, p, aprox="kl"):
     """
