@@ -21,7 +21,8 @@ def asymmetric_sinkhorn_algorithm(
     verbose: bool = False,
     debiasing_update_freq: int = 1,
     mass_scaling=False,
-    fixed_barycentre=None
+    fixed_barycentre=None,
+    bary_animation=False
 ):
     # shorten to pass around
     dp = data_processor
@@ -73,6 +74,8 @@ def asymmetric_sinkhorn_algorithm(
     err_barycentres = tol + 1.0
     potential_error_list = []
     barycentre_error_list = []
+    if bary_animation:
+        barycentre_list = [barycentre.clone().cpu().numpy()]
 
     while count_iterates < max_iterates and err_barycentres > tol:
         # print('current error', potential_error_list[-1] if len(potential_error_list)>0 else 'N/A', 'barycentre error', barycentre_error_list[-1] if len(barycentre_error_list)>0 else 'N/A')
@@ -119,6 +122,9 @@ def asymmetric_sinkhorn_algorithm(
             # update the barycentre in the dictionary
             for edge in dp.graph.edges:
                 dp.data_dict[edge[0]]["density"] = barycentre
+            
+            if bary_animation:
+                barycentre_list.append(barycentre.clone().cpu().numpy())
         else:
             # need another error term to check convergence
             err_barycentres = err_potentials
@@ -186,6 +192,9 @@ def asymmetric_sinkhorn_algorithm(
             assert (
                 dp.data_dict[edges[0]]["debiased_potential"] is d
             ), "Debiasing potential should be the same object"
+
+    if bary_animation:
+        return data_processor, barycentre, potential_error_list, barycentre_error_list, barycentre_list
 
     return data_processor, barycentre, potential_error_list, barycentre_error_list
 
