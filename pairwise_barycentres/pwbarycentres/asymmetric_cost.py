@@ -16,7 +16,8 @@ def asymmetric_cost(
     aprox: str,
     debiasing: bool = True,
     verbose: bool = False,
-    fixed_barycentre=None
+    fixed_barycentre=None,
+    return_breakdown=False
 ):
 
     epsilon = dp._torch_numpy_process(epsilon).view(-1, 1)
@@ -49,9 +50,24 @@ def asymmetric_cost(
             # can choose any edge since they should be the same
             debiasing_term = symmetric_cost(dp, edge[0], edge, epsilon, rho, aprox='balanced', max_iterates=2000, tol=1e-9)
 
-        return sum(us_e) - epsilon * debiasing_term / 2 - epsilon* torch.stack(uot_mu_mu).sum()/2, us_e
+        full_cost = sum(us_e) - epsilon * debiasing_term / 2 - epsilon* torch.stack(uot_mu_mu).sum()/2
     else:
-        return sum(us_e), us_e
+        full_cost = sum(us_e)
+    
+    if return_breakdown:
+        cost_dict= dict(
+            total_cost=full_cost.item(),
+            unbalanced_sinkhorn_terms=us_e,
+            uot_mu_mu_terms=uot_mu_mu if debiasing else None,
+            debiasing_term=debiasing_term if debiasing else None,
+            epsilon=epsilon.item(),
+            rho=rho.item(),
+            aprox=aprox,
+            debiasing=debiasing
+        )
+        return full_cost, us_e, cost_dict
+    else:
+        return full_cost, us_e
     
 
 def _asymmetric_individual_edge_cost(dp, edge, epsilon, rho, aprox, debiasing):
@@ -104,13 +120,21 @@ def _calculate_dual_cost_constant(dp, edge, epsilon, debiasing):
     bary_node = edge[0]
     data_node = edge[1]
 
+    # only need these for the shape so doesn't matter which one we use
+    if 'a' in dp.data_dict[data_node] and 'a' in dp.data_dict[bary_node]:
+        string = 'a'
+    elif 'f' in dp.data_dict[data_node] and 'f' in dp.data_dict[bary_node]:
+        string = 'f'
+    else:
+        raise Warning("No potentials or scaling factors attached to either node")
+
     if debiasing:
         if "debiased_potential" in dp.data_dict[bary_node]:
             b = (
-                torch.ones_like(dp.data_dict[bary_node]["a"])
+                torch.ones_like(dp.data_dict[bary_node][string])
                 * dp.data_dict[bary_node]["debiased_potential"]
             )
-            a = torch.ones_like(dp.data_dict[data_node]["a"])
+            a = torch.ones_like(dp.data_dict[data_node][string])
         elif "debiased_potential" in dp.data_dict[data_node]:
             raise Warning("No debiasing potentials should be attached to the data")
         else:
@@ -126,8 +150,8 @@ def _calculate_dual_cost_constant(dp, edge, epsilon, debiasing):
                 "Both nodes have debiasing potentials attached, this is unexpected behaviour"
             )
     else:
-        a = torch.ones_like(dp.data_dict[data_node]["a"])
-        b = torch.ones_like(dp.data_dict[bary_node]["a"])
+        a = torch.ones_like(dp.data_dict[data_node][string])
+        b = torch.ones_like(dp.data_dict[bary_node][string])
 
     # These terms are the same as the marginal term reductions
     if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
