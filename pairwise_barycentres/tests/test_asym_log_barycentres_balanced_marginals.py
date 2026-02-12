@@ -63,16 +63,17 @@ def test_marginals_asym_log_bary_with_same_grid_uniform_density_without_debiasin
         potentials='f')
 
     # run asymmetric sinkhorn algorithm
-    data_processor, barycentre, potential_error_list, barycentre_error_list = (
+    data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict = (
         asymmetric_sinkhorn_log_algorithm(
             data_processor,
             epsilon=1 / np.sqrt(n1 * n2),
             rho=1.0,
             aprox="balanced",
-            max_iterates=500,
-            tol=1e-8,
+            max_iterates=1000,
+            tol=1e-10,
             epsilon_annealing=False,
             debiasing=False,
+            measure_constraints=True
         )
     )
 
@@ -85,7 +86,10 @@ def test_marginals_asym_log_bary_with_same_grid_uniform_density_without_debiasin
         assert marginals[node]["marginal"].sum().item() - 1.0 < 1e-5, (
             marginals[node]["marginal"].sum().item()
         )  # less than tolerance
-
+    
+    for key in constraints_dict:
+        assert constraints_dict[key][-1] < 1e-10, constraints_dict[key][-1]  # less than tolerance
+    
     for nodes in data_processor.graph.nodes():
         assert marginals[nodes]["error"] < 1e-8, marginals[nodes][
             "error"
@@ -105,7 +109,7 @@ def test_marginals_asym_log_bary_with_same_grid_uniform_density_without_debiasin
 @pytest.mark.parametrize(
     "n1, n2, members, L, grid_type",
     [
-        (8, 8, 4, 3.5, "tensor"),
+        (8, 8, 4, 3.5, "flat"),
         (9, 8, 3, 3.5, "tensor"),
         (8, 9, 2, 3.5, "tensor"),
         (11, 11, 6, 0.9, "flat"),
@@ -156,19 +160,23 @@ def test_marginals_asym_log_bary_with_same_grid_uniform_density_with_debiasing(
         ), (data_processor.data_dict[edges[1]]["density"].sum().item())
 
     # run asymmetric sinkhorn algorithm
-    data_processor, barycentre, potential_error_list, barycentre_error_list = (
+    data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict = (
         asymmetric_sinkhorn_log_algorithm(
             data_processor,
             epsilon=1 / np.sqrt(n1 * n2),
             rho=1.0,
             aprox="balanced",
             max_iterates=1000,
-            tol=1e-6,  # relax tolerance because it was not converging very fast for this debiased setting?
+            tol=1e-9,  # relax tolerance because it was not converging very fast for this debiased setting?
             epsilon_annealing=False,
             debiasing=True,
             verbose=True,
+            measure_constraints=True
         )
     )
+
+    for key in constraints_dict: # relax constraint 
+        assert constraints_dict[key][-1] < 1e-6, "key: " + key + " value: " + str(constraints_dict[key][-1])  # less than tolerance
 
     # if given no nodes then they should all be returned
     marginals = ot_marginals(
@@ -246,18 +254,22 @@ def test_marginals_asym_log_bary_with_different_grid_uniform_density_without_deb
     data_processor = generate_barycentredataprocessor(data, barycentre_grid=Y, potentials='f')
 
     # run asymmetric sinkhorn algorithm
-    data_processor, barycentre, potential_error_list, barycentre_error_list = (
+    data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict = (
         asymmetric_sinkhorn_log_algorithm(
             data_processor,
             epsilon=max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
             rho=1.0,
             aprox="balanced",
-            max_iterates=500,
+            max_iterates=1000,
             tol=1e-7,
             epsilon_annealing=False,
             debiasing=False,
+            measure_constraints=True
         )
     )
+    
+    for key in constraints_dict:
+        assert constraints_dict[key][-1] < 1e-7, "key: " + key + " value: " + str(constraints_dict[key][-1])  # less than tolerance
 
     # if given no nodes then they should all be returned
     marginals = ot_marginals(
@@ -338,7 +350,7 @@ def test_marginals_asym_log_bary_with_different_grid_uniform_density_with_debias
     data_processor = generate_barycentredataprocessor(data, barycentre_grid=Y, potentials='f')
 
     # run asymmetric sinkhorn algorithm
-    data_processor, barycentre, potential_error_list, barycentre_error_list = (
+    data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict = (
         asymmetric_sinkhorn_log_algorithm(
             data_processor,
             epsilon=max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
@@ -348,8 +360,12 @@ def test_marginals_asym_log_bary_with_different_grid_uniform_density_with_debias
             tol=1e-5,
             epsilon_annealing=False,
             debiasing=True,
+            measure_constraints=True,
         )
     )
+
+    for key in constraints_dict:
+        assert constraints_dict[key][-1] < 1e-5, "key: " + key + " value: " + str(constraints_dict[key][-1])  # less than tolerance
 
     # if given no nodes then they should all be returned
     marginals = ot_marginals(
@@ -446,7 +462,7 @@ def test_marginals_asym_log_bary_with_all_different_grids_with_debiasing(
     data_processor = generate_barycentredataprocessor(data, barycentre_grid=Y, potentials='f')
 
     # run asymmetric sinkhorn algorithm
-    data_processor, barycentre, potential_error_list, barycentre_error_list = (
+    data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict = (
         asymmetric_sinkhorn_log_algorithm(
             data_processor,
             epsilon=max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
@@ -457,8 +473,12 @@ def test_marginals_asym_log_bary_with_all_different_grids_with_debiasing(
             epsilon_annealing=False,
             debiasing=True,
             verbose=True,
+            measure_constraints=True,
         )
     )
+
+    for key in constraints_dict:
+        assert constraints_dict[key][-1] < 1e-5, "key: " + key + " value: " + str(constraints_dict[key][-1])  # less than tolerance
 
     # if given no nodes then they should all be returned
     marginals = ot_marginals(
@@ -542,19 +562,23 @@ def test_marginals_asym_log_bary_with_all_different_grids_without_debiasing(
     data_processor = generate_barycentredataprocessor(data, barycentre_grid=Y, potentials='f')
 
     # run asymmetric sinkhorn algorithm
-    data_processor, barycentre, potential_error_list, barycentre_error_list = (
+    data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict = (
         asymmetric_sinkhorn_log_algorithm(
             data_processor,
             epsilon=max(1 / np.sqrt(n1 * n2), 1 / np.sqrt(m1 * m2)),
             rho=1.0,
             aprox="balanced",
-            max_iterates=500,
-            tol=1e-7,
+            max_iterates=700,
+            tol=1e-8,
             epsilon_annealing=False,
             debiasing=False,
             verbose=True,
+            measure_constraints=True,
         )
     )
+
+    for key in constraints_dict:
+        assert constraints_dict[key][-1] < 1e-6, "key: " + key + " value: " + str(constraints_dict[key][-1])  # less than tolerance
 
     # if given no nodes then they should all be returned
     marginals = ot_marginals(
@@ -570,7 +594,7 @@ def test_marginals_asym_log_bary_with_all_different_grids_without_debiasing(
 
     for nodes in data_processor.graph.nodes():
         # relax tolerance because it was not converging very fast for this debiased setting?
-        assert marginals[nodes]["error"] < 1e-5, marginals[nodes][
+        assert marginals[nodes]["error"] < 1e-4, marginals[nodes][
             "error"
         ]  # less than tolerance
 

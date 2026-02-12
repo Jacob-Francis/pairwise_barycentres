@@ -76,7 +76,6 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
 
         # Useful attributes
         self.num_of_edges = len(self.graph.edges)
-        
 
         self.process_graph_weights()
 

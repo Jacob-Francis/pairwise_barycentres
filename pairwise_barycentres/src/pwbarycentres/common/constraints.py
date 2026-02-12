@@ -1,7 +1,5 @@
-from .asymmetric_sinkhorn_algorithm import Kd_dual_potential_reduction
+from .utils import Kd_dual_potential_reduction
 from .marginals  import calculate_node_marginal, ot_marginals
-import torch
-
 import torch
 
 def check_tensor_dtypes(obj, path=""):
@@ -52,3 +50,4 @@ def barycentre_constraint(barycentre, epsilon, dp, debiasing=True):
         sumfi += w['weight'] * epsilon * torch.log(dp.data_dict[node]['a'] + 1e-30)
 
     return torch.norm(sumfi, p=float('inf')), torch.norm(sumfi, p=1)
+

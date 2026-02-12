@@ -3,6 +3,8 @@ import pytest
 import torch
 from pwbarycentres import chizat_marginals, chizat_reduction, log_reduction_ij, log_reduction_ii
 import pykeops
+import os
+os.environ["KEOPS_BACKEND"] = "CPU"
 
 # Import the functions you provided (adjust the import path as necessary)
 # from your_module import chizat_reduction, chizat_marginals
@@ -29,6 +31,8 @@ def numpy_sqdist_matrix(X, Y):
 
 @pytest.mark.parametrize("n_i,n_j,d", [(5, 7, 2), (1, 3, 2), (10, 10, 2)])
 def test_chizat_reduction_matches_numpy(n_i, n_j, d):
+
+    # pykeops.clean_pykeops()
 
     np.random.seed(12345 + n_i + n_j)
     Xi = np.random.uniform(size=(n_i, d)).astype(np.float64)
@@ -178,6 +182,8 @@ def test_edge_cases_small_values():
     """
     Test a corner case: very small epsilon and near-zero distances to ensure numeric stability.
     """
+    pykeops.clean_pykeops()
+
     # two identical points -> distance 0
     Xi = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=np.float64)
     Yj = Xi.copy()

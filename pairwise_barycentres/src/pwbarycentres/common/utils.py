@@ -1,6 +1,6 @@
 import torch
 from graph_dp import SinkhornDataProcessor
-from .pykeops_formulas import chizat_reduction
+from .pykeops_formulas import chizat_reduction, log_reduction_ii, log_reduction_ij
 
 # ----------------------------------------------------------------------------------
 #     ENTROPY RELATED THINGS
@@ -261,7 +261,7 @@ def generate_epsilon_list(epsilon_end: float, max_iter=1000):
     t = torch.arange(1, max_iter + 1, dtype=torch.float64)
     eps = 0.5 / torch.sqrt(t).to(epsilon_end)
 
-    # clamp so it does not shrink below your desired final epsilon
+    # clamp 
     eps = torch.clamp(eps, min=epsilon_end)
     return eps
 
@@ -329,8 +329,16 @@ def process_dict_for_barycentre(dp: SinkhornDataProcessor, debiasing=True):
 
 def _flat_grid_sinkhorn_reduction(a, X, Y, epsilon, d=None, ind=None):
 
+    # # wheres the tuple!!!
+    # print('a', type(a), a.shape)
+    # print('X', type(X), X.shape)
+    # print('Y', type(Y), Y.shape)
+    # print('epsilon', type(epsilon), epsilon)
+    # print('d', type(d), d.shape if d is not None else None)
+
     # kernel computations - K @ a
     # main bottle neck
+
     if ind==0:
         return chizat_reduction(X, Y, epsilon, a*d)
     elif ind==1:
@@ -353,7 +361,7 @@ def _dual_cost_data_term(a, data, aprox, epsilon, rho):
         return torch.sum(torch.where(data > 0, (epsilon * torch.log(a) * data),  torch.zeros_like(data)))
     elif aprox == "tv":
         assert (epsilon * torch.log(torch.where(data > 0, a, torch.ones_like(a))) <= rho).all(), "a should be less than rho for tv aprox"
-        return torch.sum(torch.where(data > 0, rho * (-torch.maximum(-epsilon * torch.log(a)/rho, -rho)) * data, torch.zeros_like(data)))
+        return torch.sum(torch.where(data > 0, (-torch.maximum(-epsilon * torch.log(a), -rho)) * data, torch.zeros_like(data)))
     else:
         raise NotImplementedError("Only kl and balanced aprox implemented")
 
@@ -370,6 +378,56 @@ def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho):
         return torch.sum(f * data)
     elif aprox == "tv":
         assert (f <= rho).all(), "a should be less than rho for tv aprox"
-        return torch.sum(torch.where(data > 0, -rho * (torch.maximum(-f/rho, -rho)) * data, torch.zeros_like(data)))
+        return torch.sum(torch.where(data > 0, (torch.maximum(-f, -rho)) * data, torch.zeros_like(data)))
     else:
         raise NotImplementedError("Only kl, tv and balanced aprox implemented")
+
+
+def _flat_grid_log_sinkhorn_reduction(f, d, ind, X, Y, epsilon):
+    """
+    if f and d are both Vi then ind= 0
+    if f is Vi and d is Vj then ind=1
+    """
+    #something in numpy still
+
+    # kernel computations - K @ a
+    # main bottle neck
+    if ind ==0:
+        return log_reduction_ii(f, X, Y, epsilon, d) 
+    elif ind == 1:
+        return log_reduction_ij(f, X, Y, epsilon, d)
+
+
+def Kd_dual_potential_reduction(dp, d, epsilon):
+    """
+    Kd reduction for debiasing potential update
+    """
+    # pick first edge becasue all edges should have the same barycentre node at edge[0]
+    edge = list(dp.graph.edges)[0]
+
+    # Symmetric reduction for debiasing term
+    if "x1x1" in dp.data_dict[edge[0]] and "x2x2" in dp.data_dict[edge[0]]:
+        s = _tensorised_sinkhorn_reduction(
+            d,
+            dp.data_dict[edge[0]]["x1x1"],
+            dp.data_dict[edge[0]]["x2x2"],
+            epsilon,
+        )
+
+    # Otherwise PyKeOps
+    elif "grid" in dp.data_dict[edge[0]]:
+        s = _flat_grid_sinkhorn_reduction(
+            d,
+            dp.data_dict[edge[0]]["grid"],
+            dp.data_dict[edge[0]]["grid"],
+            epsilon,
+        )
+    
+    if torch.any(torch.isnan(s)) or torch.any(torch.isinf(s)):
+        raise ValueError("Debiasing reduction NaN/inf detected", s.sum().item())
+    
+    if torch.any(s <= 0):
+        raise ValueError("Debiasing reduction negative or zero values detected", s.min().item())
+    
+    return s
+

@@ -3,7 +3,8 @@ from setuptools import setup, find_packages
 setup(
     name="pairwise_barycentres",
     version="0.1",
-    packages=find_packages(include=["pwbarycentres"]),
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
     install_requires=[
         "torch_numpy_process>=0.1",  # Dependency on the 'torch_numpy_process' package
         "numpy>=1.24.3",

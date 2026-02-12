@@ -4,8 +4,6 @@ import torch
 import numpy as np
 
 
-
-
 def mmuot_marginal_j(
     dp: SinkhornDataProcessor, j, epsilon, prod=True, update_alpha=False
 ):
@@ -141,12 +139,15 @@ def mmuot_dual_cost(
     epsilon = dp._torch_numpy_process(epsilon)
     rho = dp._torch_numpy_process(rho)
 
+    cost_dict = {}
+
     # potential sums
     for j in dp.graph.nodes:
         # negative signs delt with within.
-        dual_cost += _dual_cost_data_term(
+        cost_dict['node_'+str(j)] = _dual_cost_data_term(
             dp.data_dict[j]["f"], dp.data_dict[j]["density"], aprox, epsilon, rho
         )
+        dual_cost += cost_dict['node_'+str(j)] 
 
     # entropy term
     # - epsilon < exp(sum f ) -1, K>: 
@@ -163,7 +164,9 @@ def mmuot_dual_cost(
         ).item()
 
     # print('updated dual cost:', dual_cost, marginal.sum().item(), k_term)
+    cost_dict['k_term'] = k_term
+    cost_dict['marginal_sum'] = marginal.sum().item()
+    cost_dict['entropy_term'] = - epsilon.item() * (marginal.sum().item() - k_term)
     dual_cost -= epsilon.item() * (marginal.sum().item() - k_term)
 
-    return dual_cost
-
+    return dual_cost.item(), cost_dict

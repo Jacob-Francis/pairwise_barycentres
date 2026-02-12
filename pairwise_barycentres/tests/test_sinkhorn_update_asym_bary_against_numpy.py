@@ -1,3 +1,5 @@
+# I SHOULD MAKE INTO A LOG VERION
+
 import numpy as np
 from scipy.spatial.distance import cdist
 import torch
@@ -13,7 +15,7 @@ torch.set_printoptions(precision=8)
 
 
 # ==============================================================
-# Testing sinkhorn udpate
+# Testing sinkhorn update
 # ==============================================================
 
 @pytest.mark.parametrize(

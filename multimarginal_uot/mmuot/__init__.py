@@ -6,3 +6,4 @@ from .mmuot_sinkhorn_graph_reductions import (
     generate_mmuot_debiasing_dp
 )
 from .mmuot_costing import mmuot_dual_cost, mmuot_marginal_j, mmuot_marginals, kernel_size
+from .symmetric_debiasing_problem import muot_symmetric_problem, symmetric_cost

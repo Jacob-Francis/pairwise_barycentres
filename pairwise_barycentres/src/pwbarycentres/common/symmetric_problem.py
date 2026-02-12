@@ -5,20 +5,31 @@
 import torch
 import numpy as np
 from graph_dp import SinkhornDataProcessor
-from .utils import _flat_grid_sinkhorn_reduction, chizat_proxdiv_step, tensorise_f, generate_epsilon_list, process_dict_for_barycentre, _tensorised_sinkhorn_reduction
+from .utils import (
+    _flat_grid_sinkhorn_reduction, 
+    chizat_proxdiv_step,   
+    _tensorised_sinkhorn_reduction,
+    _dual_cost_data_term, 
+    _tensorised_log_sinkhorn_reduction, 
+    _dual_cost_data_term_f_potential,
+    _flat_grid_log_sinkhorn_reduction
+    )
+
 from .marginals import (
-    calculate_node_marginal,
     _tensorised_marginal_reduction,
     _flat_grid_marginal_reduction,
 )
-from .utils import _dual_cost_data_term
 
-def symmetric_cost(dp, k, edge, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
 
-    sym_pot = symmetric_algorithm(dp, k, edge, epsilon, rho, aprox, max_iterates, tol)
+
+def symmetric_cost(dp, k, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
+
+    sym_pot = symmetric_algorithm(dp, k, epsilon, rho, aprox, max_iterates, tol)
 
     # term1 (2 because its the same potential)
-    term1 = 2*_dual_cost_data_term(sym_pot, dp.data_dict[k]['density'], aprox, epsilon, rho)
+    term1 = 2*_dual_cost_data_term_f_potential(sym_pot, dp.data_dict[k]['density'], aprox, epsilon, rho)
+
+    # need to chagne below 
 
     # term2 - entropic term
     assert 'grid' in dp.data_dict[k], "You may have cleared grids incorrectly"
@@ -67,14 +78,14 @@ def symmetric_cost(dp, k, edge, epsilon, rho, aprox, max_iterates=2000, tol=1e-9
             torch.ones_like(sym_pot),
         ).sum()
 
-    return term1  - epsilon*(pi_sum - cost_const)
+    return term1  - epsilon*(pi_sum - cost_const)/(np.prod(dp.data_dict[k]["density"].shape)**2)
 
 
-def symmetric_algorithm(dp, k, edge, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
-    update_method = symmetric_mat_vec_chizat_method(dp, k, edge, epsilon, rho, aprox)
+def symmetric_algorithm(dp, k, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
+    update_method = symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox)
 
     # I'm not sure which is better to do it in, it shoudl converg fast anyway
-    sym_pot_0 = dp.data_dict[k]['a'] if 'a' in dp.data_dict[k] else torch.exp(dp.data_dict[k]['f']/epsilon)
+    sym_pot_0 = epsilon*torch.log(dp.data_dict[k]['a']) if 'a' in dp.data_dict[k] else dp.data_dict[k]['f']
     sym_pot, err = symmetric_sinkhorn(sym_pot_0, update_method, max_iterates, tol)
 
     if err > tol:
@@ -83,12 +94,10 @@ def symmetric_algorithm(dp, k, edge, epsilon, rho, aprox, max_iterates=2000, tol
     return sym_pot
 
 
-def symmetric_mat_vec_chizat_method(dp, k, edge, epsilon, rho, aprox):
+def symmetric_mat_vec_chizat_method(dp, k, epsilon, rho, aprox):
     '''
     k is the node which contains data mu_k, and then solving UOT^{phi, phi}(mu_k, mu_kl)
     '''
-    assert k in edge
-
     assert 'grid' in dp.data_dict[k], "You may have cleared grids incorrectly"
     grid = dp.data_dict[k]['grid']
 
@@ -130,10 +139,61 @@ def symmetric_mat_vec_chizat_method(dp, k, edge, epsilon, rho, aprox):
         rho,
         dp.data_dict[k]["density"],
         aprox=aprox,
-    )
+    ) / (np.prod(dp.data_dict[k]["density"].shape)**2)
     
     return one_chizat_update
 
+def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox):
+    '''
+    k is the node which contains data mu_k, and then solving UOT^{phi, phi}(mu_k, mu_kl)
+    '''
+    assert 'grid' in dp.data_dict[k], "You may have cleared grids incorrectly"
+    grid = dp.data_dict[k]['grid']
+
+    tensoirse = False
+
+    # can we tensorise
+    if isinstance(grid, tuple):
+        gridding = dp._cost_for_tuple(grid, grid)
+        tensoirse = True
+        
+    elif len(grid.shape) == 3:
+        n1, n2, n3 = grid.shape
+
+        gridding = (
+                dp._cost_for_meshgrid(grid, grid, n1, n2, n1, n2)
+            )
+        tensoirse = True
+
+    if tensoirse:
+        lse = lambda a_g : _tensorised_log_sinkhorn_reduction(
+                a_g,
+                torch.ones_like(a_g),
+                0,
+                *gridding,
+                epsilon
+        )
+    else:
+        lse = lambda a_g : _flat_grid_log_sinkhorn_reduction(
+            a_g,
+            torch.ones_like(a_g),
+            0,
+            grid,
+            grid, 
+            epsilon
+            )
+      
+    # aprox
+    def one_chizat_update(sym_pot):
+        return chizat_proxdiv_step(
+        lse(sym_pot),
+        epsilon,
+        rho,
+        dp.data_dict[k]["density"],
+        aprox=aprox,
+    ) / (np.prod(dp.data_dict[k]["density"].shape)**2)
+    
+    return one_chizat_update
 
 def symmetric_sinkhorn(sym_pot_0, update_method, max_iterates=2000, tol=1e-9):
 

@@ -5,9 +5,9 @@ import pytest
 from pwbarycentres import (
     asymmetric_sinkhorn_algorithm,
     generate_barycentredataprocessor,
-    asymmetric_cost,
     ot_marginals,
 )
+from pwbarycentres import asymmetric_matvec_cost as asymmetric_cost
 import networkx as nx
 
 torch.set_printoptions(precision=8)
@@ -169,11 +169,6 @@ def test_marginals_asym_bary_with_same_grid_uniform_density_with_debiasing(
     marginals = ot_marginals(
         data_processor, epsilon=1 / np.sqrt(n1 * n2), debiasing=True
     )
-
-    # for node in data_processor.graph.nodes():
-    #     print(
-    #         node, marginals[node]["marginal"].sum().item()
-    #     )
 
     for node in data_processor.graph.nodes():
         assert marginals[node]["marginal"].sum().item() - 1.0 < 1e-5, (

@@ -1,8 +1,8 @@
 import torch
 import numpy as np
 from graph_dp import SinkhornDataProcessor
-from .utils import _flat_grid_sinkhorn_reduction, chizat_proxdiv_step, tensorise_f, generate_epsilon_list, process_dict_for_barycentre, _tensorised_sinkhorn_reduction
-from .marginals import (
+from ..common.utils import Kd_dual_potential_reduction, _flat_grid_sinkhorn_reduction, chizat_proxdiv_step, tensorise_f, generate_epsilon_list, process_dict_for_barycentre, _tensorised_sinkhorn_reduction
+from ..common.marginals import (
     calculate_node_marginal,
     _tensorised_marginal_reduction,
     _flat_grid_marginal_reduction,
@@ -278,38 +278,6 @@ def _chizat_reduction_for_sinkhorn(dp, k, edge, epsilon, d=None, debiasing=False
     return temp
 
 
-def Kd_dual_potential_reduction(dp, d, epsilon):
-    """
-    Kd reduction for debiasing potential update
-    """
-    # pick first edge becasue all edges should have the same barycentre node at edge[0]
-    edge = list(dp.graph.edges)[0]
-
-    # Symmetric reduction for debiasing term
-    if "x1x1" in dp.data_dict[edge[0]] and "x2x2" in dp.data_dict[edge[0]]:
-        s = _tensorised_sinkhorn_reduction(
-            d,
-            dp.data_dict[edge[0]]["x1x1"],
-            dp.data_dict[edge[0]]["x2x2"],
-            epsilon,
-        )
-
-    # Otherwise PyKeOps
-    elif "grid" in dp.data_dict[edge[0]]:
-        s = _flat_grid_sinkhorn_reduction(
-            d,
-            dp.data_dict[edge[0]]["grid"],
-            dp.data_dict[edge[0]]["grid"],
-            epsilon,
-        )
-    
-    if torch.any(torch.isnan(s)) or torch.any(torch.isinf(s)):
-        raise ValueError("Debiasing reduction NaN/inf detected", s.sum().item())
-    
-    if torch.any(s <= 0):
-        raise ValueError("Debiasing reduction negative or zero values detected", s.min().item())
-    
-    return s
 
 def debiasing_dual_potential_update(dp, d, barycentre, epsilon):
     """

@@ -1,13 +1,14 @@
 # from asymmetric_sinkhorn_algorithm import 
-from .marginals import (
+from ..common.marginals import (
     calculate_node_marginal,
     _tensorised_marginal_reduction,
     _flat_grid_marginal_reduction,
+    _calculate_debiasing_potential_symmetric_term
 )
 from graph_dp import SinkhornDataProcessor
-from .symmetric_problem import symmetric_cost
+from ..common.symmetric_problem import symmetric_cost
 import torch
-from .utils import _dual_cost_data_term, _dual_cost_data_term_f_potential
+from ..common.utils import _dual_cost_data_term, _dual_cost_data_term_f_potential
 
 def asymmetric_cost(
     dp: SinkhornDataProcessor,
@@ -34,7 +35,7 @@ def asymmetric_cost(
         
         # solve UOT(mu_I, mu_I)
         if debiasing:
-            cost = symmetric_cost(dp, edge[1], edge, epsilon, rho, aprox, max_iterates=2000, tol=1e-9)
+            cost = symmetric_cost(dp, edge[1], epsilon, rho, aprox, max_iterates=2000, tol=1e-9)
             uot_mu_mu.append(cost * weighting)
 
     if debiasing:
@@ -43,12 +44,12 @@ def asymmetric_cost(
             d = dp.data_dict[edge[0]]["debiased_potential"]
             # calcualte <d-1 K (d-1)>
             debiasing_term = _calculate_debiasing_potential_symmetric_term(
-                d, dp, edge[0], epsilon
+                d, dp, edge[0], epsilon, leb=False
             )
         else:
             # calcualte UOT_(e,e)
             # can choose any edge since they should be the same
-            debiasing_term = symmetric_cost(dp, edge[0], edge, epsilon, rho, aprox='balanced', max_iterates=2000, tol=1e-9)
+            debiasing_term = symmetric_cost(dp, edge[0], epsilon, rho, aprox='balanced', max_iterates=2000, tol=1e-9)
 
         full_cost = sum(us_e) - epsilon * debiasing_term / 2 - epsilon* torch.stack(uot_mu_mu).sum()/2
     else:
@@ -175,32 +176,4 @@ def _calculate_dual_cost_constant(dp, edge, epsilon, debiasing):
 
     return cost_constant.sum()
 
-def _calculate_debiasing_potential_symmetric_term(d, dp, node, epsilon):
-    """
-    we can hack the marginal reductions for find the cost constant summation <K>
-    by using ones vectors for ai and bj
-    """
-
-    if "x1x1" in dp.data_dict[node] and "x2x2" in dp.data_dict[node]:
-        # we can tensorise
-        cost_constant = _tensorised_marginal_reduction(
-            dp.data_dict[node]["x1x1"],  # either order tensorise_f will sort it
-            dp.data_dict[node]["x2x2"],
-            epsilon,
-            d - 1, # look here!
-            d - 1,
-        )
-    elif "grid" in dp.data_dict[node]:
-        # we can use PyKeOps
-        print('devices:', dp.data_dict[node]["grid"].device, d.device, epsilon.device)
-
-        cost_constant = _flat_grid_marginal_reduction(
-            dp.data_dict[node]["grid"],
-            dp.data_dict[node]["grid"],
-            epsilon,
-            d.view(-1,1) - 1,
-            d.view(-1,1) - 1,
-        )
-
-    return cost_constant.sum()
 

@@ -26,7 +26,7 @@ def chizat_reduction(Xi, Yj, epsilon, ai):
     return _pykeops_chizat_reduction(
         Xi,
         Yj,
-        epsilon,
+        epsilon.view(-1,1),
         ai,
     )
 
@@ -77,7 +77,7 @@ def log_reduction_ii(Fi, Xi, Yj, epsilon, ai):
         Fi,
         Xi,
         Yj,
-        epsilon,
+        epsilon.view(-1,1),
         ai,
     )
 
@@ -113,7 +113,7 @@ def log_reduction_ij(Fi, Xi, Yj, epsilon, aj):
         Fi,
         Xi,
         Yj,
-        epsilon,
+        epsilon.view(-1,1),
         aj,
     )
 
@@ -146,7 +146,7 @@ def chizat_marginals(Xi, Yj, epsilon, ai, bj):
     return _pykeops_chizat_marginals(
         Xi,
         Yj,
-        epsilon,
+        epsilon.view(-1,1),
         ai,
         bj,
     )
@@ -200,7 +200,7 @@ def fg_reduction_ii(Fi, Gj, Xi, Yj, epsilon, ai):
         Gj,
         Xi,
         Yj,
-        epsilon,
+        epsilon.view(-1,1),
         ai,
     )
 
@@ -226,7 +226,7 @@ def fg_reduction_ij(Fi, Gj, Xi, Yj, epsilon, aj):
         Gj,
         Xi,
         Yj,
-        epsilon,
+        epsilon.view(-1,1),
         aj,
     )
 

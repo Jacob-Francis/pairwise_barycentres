@@ -8,9 +8,9 @@ import pytest
 from pwbarycentres import (
     asymmetric_sinkhorn_algorithm,
     generate_barycentredataprocessor,
-    asymmetric_cost,
     ot_marginals,
 )
+from pwbarycentres import asymmetric_matvec_cost as asymmetric_cost
 import networkx as nx
 
 torch.set_printoptions(precision=8)

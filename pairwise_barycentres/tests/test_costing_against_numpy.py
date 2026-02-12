@@ -11,7 +11,7 @@ from pwbarycentres import (
     process_dict_for_barycentre
 
 )
-import pwbarycentres.asymmetric_cost as asym_cost
+from pwbarycentres import asymmetric_cost as asym_cost
 import networkx as nx
 
 torch.set_printoptions(precision=8)
@@ -81,7 +81,7 @@ def test_marginals_asym_bary_with_same_grid_uniform_density_without_debiasing(
         )
     )
 
-    dkd = _calculate_debiasing_potential_symmetric_term(d, dp, 0, epsilon)
+    dkd = _calculate_debiasing_potential_symmetric_term(d, dp, 0, epsilon, leb=False)
 
     # torch version
     K = torch.cdist(
