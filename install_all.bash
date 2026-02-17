@@ -1,0 +1,1 @@
+python3 -m pip install -e graph_data_processing/ -e pairwise_barycentres/ -e multimarginal_uot/
