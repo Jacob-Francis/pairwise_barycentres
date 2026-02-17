@@ -69,7 +69,7 @@ def test_chizat_reduction_matches_numpy(n_i, n_j, d):
 @pytest.mark.parametrize("n_i,n_j,d", [(5, 7, 2), (1, 3, 2), (10, 10, 2)])
 def test_chizat_marginal_matches_numpy(n_i, n_j, d):
 
-    pykeops.clean_pykeops()
+    # pykeops.clean_pykeops()
     np.random.seed(12313 + n_i + n_j)
     Xi = np.random.uniform(size=(n_i, d)).astype(np.float64)
     Yj = np.random.uniform(size=(n_j, d)).astype(np.float64)
@@ -106,7 +106,7 @@ def test_chizat_marginal_matches_numpy(n_i, n_j, d):
 @pytest.mark.parametrize("n_i,n_j,d", [(5, 7, 2), (1, 3, 2), (10, 10, 2)])
 def test_log_reduction_ii_matches_numpy(n_i, n_j, d):
 
-    pykeops.clean_pykeops()
+    # pykeops.clean_pykeops()
     np.random.seed(12313 + n_i + n_j)
     Xi = np.random.uniform(size=(n_i, d)).astype(np.float64)
     Yj = np.random.uniform(size=(n_j, d)).astype(np.float64)
@@ -143,7 +143,7 @@ def test_log_reduction_ii_matches_numpy(n_i, n_j, d):
 @pytest.mark.parametrize("n_i,n_j,d", [(5, 7, 2), (1, 3, 2), (10, 10, 2)])
 def test_log_reduction_ij_matches_numpy(n_i, n_j, d):
 
-    pykeops.clean_pykeops()
+    # pykeops.clean_pykeops()
     np.random.seed(12313 + n_i + n_j)
     Xi = np.random.uniform(size=(n_i, d)).astype(np.float64)
     Yj = np.random.uniform(size=(n_j, d)).astype(np.float64)
@@ -182,7 +182,7 @@ def test_edge_cases_small_values():
     """
     Test a corner case: very small epsilon and near-zero distances to ensure numeric stability.
     """
-    pykeops.clean_pykeops()
+    # pykeops.clean_pykeops()
 
     # two identical points -> distance 0
     Xi = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=np.float64)

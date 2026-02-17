@@ -19,7 +19,8 @@ def asymmetric_cost(
     debiasing: bool = True,
     verbose: bool = False,
     fixed_barycentre=None,
-    return_breakdown=False
+    return_breakdown=False,
+    ignore_const=False
 ):
 
     epsilon = dp._torch_numpy_process(epsilon).view(-1, 1)
@@ -35,14 +36,16 @@ def asymmetric_cost(
         us_e.append(unbal_sinkhorn_div.item() * weighting.item())
         
         # solve UOT(mu_I, mu_I)
-        if debiasing:
+        if debiasing and not ignore_const:
             cost = symmetric_cost(dp, edge[1], epsilon, rho, aprox, max_iterates=2000, tol=1e-9)
             uot_mu_mu.append(cost.item() * weighting.item())
-
+        else:
+            uot_mu_mu.append(0)
     if debiasing:
         # We need the last few terms
         if fixed_barycentre is None:
             d = dp.data_dict[edge[0]]["debiased_potential"]
+
             # calcualte <dkd - 1, L>
             debiasing_term = _calculate_debiasing_potential_symmetric_term(
                 d, dp, edge[0], epsilon
@@ -50,20 +53,25 @@ def asymmetric_cost(
 
             debiasing_term += -1
 
+            debiasing_term /=  2
+
             # add -elogd,xi
-            debiasing_term += -torch.sum(dp.data_dict[edge[0]]["density"].view(-1,1) * torch.log(d).view(-1,1))
+            debiasing_term += -torch.sum(torch.where(d > 0, dp.data_dict[edge[0]]["density"].view(-1,1) * torch.log(d).view(-1,1), torch.zeros_like(d)))
+
+            debiasing_term *= epsilon
         else:
             # calcualte UOT_(e,e)
             # can choose any edge since they should be the same
             debiasing_term = symmetric_cost(dp, edge[0], epsilon, rho, aprox='balanced', max_iterates=2000, tol=1e-9)
 
-        full_cost = sum(us_e) - epsilon * debiasing_term.item() / 2 - epsilon* np.stack(uot_mu_mu).sum()/2
+        full_cost = sum(us_e) + debiasing_term.item() - np.stack(uot_mu_mu).sum()/2
+        full_cost = full_cost.item()
     else:
         full_cost = sum(us_e)
     
     if return_breakdown:
         cost_dict= dict(
-            total_cost=full_cost.item(),
+            total_cost=full_cost,
             unbalanced_sinkhorn_terms=us_e,
             uot_mu_mu_terms=uot_mu_mu if debiasing else None,
             debiasing_term=debiasing_term.item() if debiasing else None,

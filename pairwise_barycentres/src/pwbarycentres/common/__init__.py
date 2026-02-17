@@ -5,3 +5,7 @@ from .marginals import (
 from .utils import *
 from .pykeops_formulas import *
 from .constraints import d_constraint, barycentre_constraint
+from .symmetric_problem import (
+    symmetric_algorithm,
+    symmetric_cost
+    )

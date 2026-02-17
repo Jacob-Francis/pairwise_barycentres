@@ -53,35 +53,38 @@ def symmetric_cost(dp, k, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
         pi_sum = _tensorised_marginal_reduction(
             *gridding,
             epsilon,
-            sym_pot,
-            sym_pot,
+            torch.exp(sym_pot/epsilon),
+            torch.exp(sym_pot/epsilon),
         ).sum()
 
-        cost_const = _tensorised_marginal_reduction(
-            *gridding,
-            epsilon,
-            torch.ones_like(sym_pot),
-            torch.ones_like(sym_pot),
-        ).sum()
+        cost_const = 1
+        # _tensorised_marginal_reduction(
+        #     *gridding,
+        #     epsilon,
+        #     torch.ones_like(sym_pot),
+        #     torch.ones_like(sym_pot),
+        # ).sum()
     else:
         # pykeops
         pi_sum = _flat_grid_marginal_reduction(
             grid, grid,
             epsilon,
-            sym_pot,
-            sym_pot,
+            torch.exp(sym_pot/epsilon),
+            torch.exp(sym_pot/epsilon),
         ).sum()
-        cost_const = _flat_grid_marginal_reduction(
-            grid, grid,
-            epsilon,
-            torch.ones_like(sym_pot),
-            torch.ones_like(sym_pot),
-        ).sum()
+        cost_const = 1
+        #  _flat_grid_marginal_reduction(
+        #     grid, grid,
+        #     epsilon,
+        #     torch.ones_like(sym_pot),
+        #     torch.ones_like(sym_pot),
+        # ).sum()
 
-    return term1  - epsilon*(pi_sum - cost_const)/(np.prod(dp.data_dict[k]["density"].shape)**2)
+    return term1  - epsilon*(pi_sum/(np.prod(dp.data_dict[k]["density"].shape)**2) - cost_const)
 
 
 def symmetric_algorithm(dp, k, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
+    epsilon = dp._torch_numpy_process(epsilon)
     update_method = symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox)
 
     # I'm not sure which is better to do it in, it shoudl converg fast anyway
@@ -143,7 +146,7 @@ def symmetric_mat_vec_chizat_method(dp, k, epsilon, rho, aprox):
     
     return one_chizat_update
 
-def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox):
+def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, tol=1e-12):
     '''
     k is the node which contains data mu_k, and then solving UOT^{phi, phi}(mu_k, mu_kl)
     '''
@@ -185,23 +188,38 @@ def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox):
       
     # aprox
     def one_chizat_update(sym_pot):
-        return chizat_proxdiv_step(
-        lse(sym_pot),
-        epsilon,
-        rho,
-        dp.data_dict[k]["density"],
-        aprox=aprox,
-    ) / (np.prod(dp.data_dict[k]["density"].shape)**2)
+        data = dp.data_dict[k]["density"]
+        s = epsilon*lse(sym_pot)        
+        s += 2*epsilon* np.log(1/np.prod(data.shape)) 
+
+        if aprox == "balanced":
+            temp = epsilon * torch.log(data) - s #torch.where(data > tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
+        elif aprox == 'kl':
+            temp = torch.where(data > tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
+            # contract
+            temp *= rho/ (rho + epsilon)
+        elif aprox == 'tv':
+            temp = torch.where(data > tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
+            # contract - maybe clamp  then where? 
+            temp = torch.clamp(temp, min=-rho, max=rho)
+
+        return temp
     
     return one_chizat_update
 
 def symmetric_sinkhorn(sym_pot_0, update_method, max_iterates=2000, tol=1e-9):
 
     for _ in range(max_iterates):
+        # print('0', sym_pot_0[:5])
+
         sym_pot_1 = update_method(sym_pot_0)
-        
+
+        # print('1', sym_pot_1[:5])
+
         # damped update
         sym_pot_1 = 0.5*(sym_pot_1 + sym_pot_0)
+
+        # print('2', sym_pot_1[:5])
 
         # update size
         err = torch.linalg.norm(sym_pot_1-sym_pot_0, ord=float('inf'))

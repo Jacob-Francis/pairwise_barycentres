@@ -14,6 +14,8 @@ from ..common.utils import (
 
 from ..common.marginals import calculate_node_marginal
 
+from .asymmetric_cost import asymmetric_cost
+
 
 def asymmetric_sinkhorn_log_algorithm(
     data_processor: SinkhornDataProcessor,
@@ -25,9 +27,9 @@ def asymmetric_sinkhorn_log_algorithm(
     epsilon_annealing: bool = False,
     debiasing: bool = True,
     verbose: bool = False,
-    debiasing_update_freq: int = 5,
     measure_constraints=False,
-    lags=None
+    lags=None,
+    energy_tracking=False
 ):
     # shorten to pass around
     dp = data_processor
@@ -43,7 +45,10 @@ def asymmetric_sinkhorn_log_algorithm(
     if lags is None:
         lags = {
             'barycentre': 1,
+            'debiasing': 1
         }
+
+    debiasing_update_freq = lags['debiasing']
 
     epsilon = dp._torch_numpy_process(epsilon)
     rho = dp._torch_numpy_process(rho)
@@ -71,6 +76,14 @@ def asymmetric_sinkhorn_log_algorithm(
             'partial_d': [],
             'partial_g': [],
         }
+    
+    if energy_tracking:
+        energy_dict = {
+            'total_cost': [],
+            'unbalanced_sinkhorn_terms': [],
+            'debiasing_term': [],
+            'uot_mu_mu_terms': []
+        }
     potential_error_list = []
     barycentre_error_list = []
 
@@ -95,7 +108,7 @@ def asymmetric_sinkhorn_log_algorithm(
             dp.data_dict[edge[1]]["f"] = new_b
 
         # Barycentre updates and update barycentre in dictionary
-        if count_iterates % lags['barycentre'] == 0 and count_iterates > 2 and type(lags['barycentre'])==int:
+        if count_iterates % lags['barycentre'] == 0 and type(lags['barycentre'])==int:
             barycentre_old = barycentre.clone()
             barycentre = balanced_log_barycentre_updates(dp, d, eps, debiasing=debiasing)
 
@@ -159,6 +172,22 @@ def asymmetric_sinkhorn_log_algorithm(
             err = err_barycentres
         count_iterates += 1
 
+        if energy_tracking:
+            _, _, breakdown_dict = asymmetric_cost(
+                dp, 
+                epsilon, 
+                rho, 
+                aprox, 
+                debiasing, 
+                return_breakdown=True, 
+                ignore_const=True)
+            
+            energy_dict['total_cost'].append(breakdown_dict['total_cost'])
+            energy_dict['unbalanced_sinkhorn_terms'].append(breakdown_dict['unbalanced_sinkhorn_terms'])
+            energy_dict['debiasing_term'].append(breakdown_dict['debiasing_term'])
+            energy_dict['uot_mu_mu_terms'].append(breakdown_dict['uot_mu_mu_terms'])
+           
+
         # This will always reach the correct epsilon eventually
         # as tol is increased before reevaluting the while loop
         if epsilon_annealing:
@@ -194,8 +223,12 @@ def asymmetric_sinkhorn_log_algorithm(
                 dp.data_dict[edges[0]]["debiased_potential"] is d
             ), "Debiasing potential should be the same object"
 
-    if measure_constraints:
+    if measure_constraints and not energy_tracking:
         return data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict
+    elif energy_tracking and not measure_constraints:
+        return data_processor, barycentre, potential_error_list, barycentre_error_list, energy_dict
+    elif energy_tracking and measure_constraints:
+        return data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict, energy_dict
     else:
         return data_processor, barycentre, potential_error_list, barycentre_error_list
 
@@ -383,7 +416,8 @@ def measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, 
     for e1, e2, w in dp.graph.edges(data=True):
         sum_bary += dp.data_dict[e1]["f"] * w["weight"]
     if debiasing:
-        sum_bary -= epsilon * torch.log(d)
+        # -1e3 to match the values whif takes
+        sum_bary -=  torch.where(d > tol, epsilon *torch.log(d), -1e3*torch.ones_like(d))
 
     # f (potenital on barycentre) constraint: balanced constraint avergage over leaf nodes
     sum_f = 0
@@ -394,7 +428,7 @@ def measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, 
     # debiasing dual potential constraint: 
     if debiasing:
         s = debiasing_dual_potential_update(dp, d, barycentre, epsilon, return_s=True)
-        sum_d = - barycentre / d + s
+        sum_d = - barycentre / (d + 1e-12) + s
     else:
         sum_d = torch.zeros_like(barycentre)
 
