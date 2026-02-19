@@ -56,9 +56,9 @@ def asymmetric_cost(
             debiasing_term /=  2
 
             # add -elogd,xi
-            debiasing_term += -torch.sum(torch.where(d > 0, dp.data_dict[edge[0]]["density"].view(-1,1) * torch.log(d).view(-1,1), torch.zeros_like(d)))
+            debiasing_term += -torch.sum(torch.where(d > 0, dp.data_dict[edge[0]]["density"] * torch.log(d), torch.zeros_like(d)))
 
-            debiasing_term *= epsilon
+            debiasing_term *= epsilon.item()
         else:
             # calcualte UOT_(e,e)
             # can choose any edge since they should be the same

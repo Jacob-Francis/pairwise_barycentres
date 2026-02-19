@@ -183,7 +183,7 @@ def test_costing_with_same_grid_uniform_density_uniform_measure_multi_it(
     assert torch.allclose(f_2.view(-1), f.view(-1), atol=1e-8), "Sinkhorn update failed"
 
     # calcaute mm cost
-    cost = mmuot_dual_cost(dp, epsilon, rho=1.0, aprox="balanced", prod=False, no_kernal_term=True)
+    cost = mmuot_dual_cost(dp, epsilon, rho=1.0, aprox="balanced", prod=False, no_kernal_term=True)[0]
 
     # Numpy version - only calculated f0 and f2; f1 is zero
     dual_cost = 0.0
@@ -192,7 +192,7 @@ def test_costing_with_same_grid_uniform_density_uniform_measure_multi_it(
 
     dual_cost -= epsilon.squeeze()*(a_1_0_true.squeeze()*dp.data_dict[1]['density'].view(-1)).sum(0)
 
-    assert np.isclose(cost.cpu().numpy(), dual_cost.cpu().numpy(), atol=1e-8), "Dual costing failed"
+    assert np.isclose(cost, dual_cost.cpu().numpy(), atol=1e-8), "Dual costing failed"
 
 
 @pytest.mark.parametrize(
@@ -429,7 +429,7 @@ def test_costing_with_different_grid_random_density_prod_true(
     assert torch.allclose(f2.view(-1), f.view(-1), atol=1e-8), "Sinkhorn update failed"
 
     # calcaute mm cost
-    cost = mmuot_dual_cost(dp, epsilon, rho=1.0, aprox="balanced", prod=True, no_kernal_term=True)
+    cost = mmuot_dual_cost(dp, epsilon, rho=1.0, aprox="balanced", prod=True, no_kernal_term=True)[0]
 
     # Numpy version - only calculated f0 and f2; f1 is zero
     dual_cost = 0.0
@@ -438,8 +438,7 @@ def test_costing_with_different_grid_random_density_prod_true(
     
     dual_cost -= epsilon.squeeze()*(a_2_0_true.squeeze()*dp.data_dict[2]['density'].view(-1)).sum()
 
-    print(cost.cpu().numpy(), dual_cost.cpu().numpy())
-    assert np.isclose(cost.cpu().numpy(), dual_cost.cpu().numpy(), atol=1e-8), "Dual costing failed"
+    assert np.isclose(cost, dual_cost.cpu().numpy(), atol=1e-8), "Dual costing failed"
 
 
 # ------------------------------------------------------------------------------

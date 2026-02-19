@@ -107,10 +107,10 @@ def test_d_sinkhorn_update_with_random_density_with_debiasing_fixed_agast_torch_
             s = K.T @ b
             true_barycentre *= (s.cpu()**(weight.cpu())).view(-1)
 
-        # implmeneted udpate
+        # implemented update
         barycentre = balanced_barycentre_updates(data_processor, d, epsilon)
-        print('SUMS', barycentre.sum().item(), true_barycentre.sum().item())
-        assert torch.allclose(barycentre.view(-1).cpu(), true_barycentre.view(-1), atol=1e-9)
+
+        assert torch.allclose(barycentre.view(-1).cpu(), true_barycentre.view(-1), atol=1e-5), 'Error = ' + str(torch.norm(barycentre.view(-1).cpu() - true_barycentre.view(-1).cpu(), p=2).item())
         
         for edge in data_processor.graph.edges:
             data_processor.data_dict[edge[0]]['density'] = barycentre

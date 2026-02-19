@@ -29,15 +29,25 @@ def asymmetric_sinkhorn_log_algorithm(
     verbose: bool = False,
     measure_constraints=False,
     lags=None,
-    energy_tracking=False
+    energy_tracking=False,
+    fixed_barycentre=None
 ):
     # shorten to pass around
     dp = data_processor
 
     # Initialise the debiasing potential with barycentre shape
     d = dp._torch_numpy_process(torch.ones_like(dp.data_dict[0]["density"]))
-    barycentre = d.clone() / d.sum()
-    barycentre_old = d.clone() / d.sum()
+    if fixed_barycentre is None:
+        barycentre = d.clone() / d.sum()
+        barycentre_old = d.clone() / d.sum()
+    else:
+        debiasing = False
+        print('For a fixed barycentre we turn off debiasing')
+        barycentre = dp._torch_numpy_process(fixed_barycentre).reshape(*d.shape)
+        barycentre_old = dp._torch_numpy_process(fixed_barycentre).reshape(*d.shape)
+        # update the barycentre in the dictionary
+        for edge in dp.graph.edges:
+            dp.data_dict[edge[0]]["density"] = barycentre
 
     # Preprocess dictionary for barycentre computation
     process_dict_for_barycentre(dp, debiasing=debiasing)
@@ -84,6 +94,8 @@ def asymmetric_sinkhorn_log_algorithm(
             'debiasing_term': [],
             'uot_mu_mu_terms': []
         }
+
+    
     potential_error_list = []
     barycentre_error_list = []
 
@@ -107,21 +119,26 @@ def asymmetric_sinkhorn_log_algorithm(
             )
             dp.data_dict[edge[1]]["f"] = new_b
 
-        # Barycentre updates and update barycentre in dictionary
-        if count_iterates % lags['barycentre'] == 0 and type(lags['barycentre'])==int:
-            barycentre_old = barycentre.clone()
-            barycentre = balanced_log_barycentre_updates(dp, d, eps, debiasing=debiasing)
+        if fixed_barycentre is None:
+            # Barycentre updates and update barycentre in dictionary
+            if count_iterates % lags['barycentre'] == 0 and type(lags['barycentre'])==int:
+                barycentre_old = barycentre.clone()
+                barycentre = balanced_log_barycentre_updates(dp, d, eps, debiasing=debiasing)
 
-            # calcualte error to old barycentre
-            err_barycentres = torch.norm(barycentre - barycentre_old, p=float("inf")).item()
-        elif type(lags['barycentre'])==float:
-            barycentre_old = barycentre.clone()
-            barycentre = (1-lags['barycentre'])*barycentre + lags['barycentre']*balanced_log_barycentre_updates(dp, d, eps, debiasing=debiasing)
-            err_barycentres = torch.norm(barycentre - barycentre_old, p=float("inf")).item()
+                # calcualte error to old barycentre
+                err_barycentres = torch.norm(barycentre - barycentre_old, p=float("inf")).item()
+            elif type(lags['barycentre'])==float:
+                barycentre_old = barycentre.clone()
+                barycentre = (1-lags['barycentre'])*barycentre + lags['barycentre']*balanced_log_barycentre_updates(dp, d, eps, debiasing=debiasing)
+                err_barycentres = torch.norm(barycentre - barycentre_old, p=float("inf")).item()
 
-        # update the barycentre in the dictionary
-        for edge in dp.graph.edges:
-            dp.data_dict[edge[0]]["density"] = barycentre
+            # update the barycentre in the dictionary
+            for edge in dp.graph.edges:
+                dp.data_dict[edge[0]]["density"] = barycentre
+        else:
+            # need another error term to check convergence
+            err_barycentres = err_potentials
+
 
         # project on second edge corresponding to the barycentre
         for edge in dp.graph.edges:
@@ -137,7 +154,7 @@ def asymmetric_sinkhorn_log_algorithm(
             dp.data_dict[edge[0]]["f"] = new_a
 
         # Update debiasing potential
-        if debiasing:
+        if debiasing and fixed_barycentre is None: # if fixed barycentre we don't need to update the debiasing potential as it depends on the barycentre grid which is fixed
             if count_iterates % debiasing_update_freq == 0 and type(debiasing_update_freq)==int and debiasing_update_freq > 0 :
                 d = debiasing_dual_potential_update(dp, d, barycentre, eps)
                 # Attach potential to the graph - all pointing to the same item

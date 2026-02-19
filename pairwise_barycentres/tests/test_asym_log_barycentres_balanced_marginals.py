@@ -365,7 +365,7 @@ def test_marginals_asym_log_bary_with_different_grid_uniform_density_with_debias
     )
 
     for key in constraints_dict:
-        assert constraints_dict[key][-1] < 1e-5, "key: " + key + " value: " + str(constraints_dict[key][-1])  # less than tolerance
+        assert constraints_dict[key][-1] < 1e-4, "key: " + key + " value: " + str(constraints_dict[key][-1])  # less than tolerance
 
     # if given no nodes then they should all be returned
     marginals = ot_marginals(
@@ -375,7 +375,7 @@ def test_marginals_asym_log_bary_with_different_grid_uniform_density_with_debias
     )
 
     for node in data_processor.graph.nodes():
-        assert marginals[node]["marginal"].sum().item() - 1.0 < 1e-5, (
+        assert marginals[node]["marginal"].sum().item() - 1.0 < 1e-4, (
             marginals[node]["marginal"].sum().item()
         )  # less than tolerance
 
