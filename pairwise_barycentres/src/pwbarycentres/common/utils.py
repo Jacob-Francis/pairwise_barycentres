@@ -365,7 +365,7 @@ def _dual_cost_data_term(a, data, aprox, epsilon, rho):
     else:
         raise NotImplementedError("Only kl and balanced aprox implemented")
 
-def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho):
+def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho, tol=1e-14):
     '''
     Handles the double negative inside here! Don't add another
     '''
@@ -373,12 +373,12 @@ def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho):
     assert f.shape == data.shape, "Shapes of f and data should match"
     
     if aprox == "kl":
-        return torch.where(data > 0, -rho * (torch.exp(-f / rho) - 1) * data, torch.zeros_like(data)).sum()
+        return torch.where(data > tol, -rho * (torch.exp(-f / rho) - 1) * data, torch.zeros_like(data)).sum()
     elif aprox == "balanced":
-        return torch.sum(f * data)
+        return torch.sum(torch.where(data > tol, f * data, torch.zeros_like(data)))
     elif aprox == "tv":
         assert (f <= rho).all(), "a should be less than rho for tv aprox"
-        return torch.sum(torch.where(data > 0, (torch.maximum(-f, -rho)) * data, torch.zeros_like(data)))
+        return torch.sum(torch.where(data > tol, (torch.maximum(-f, -rho)) * data, torch.zeros_like(data)))
     else:
         raise NotImplementedError("Only kl, tv and balanced aprox implemented")
 
