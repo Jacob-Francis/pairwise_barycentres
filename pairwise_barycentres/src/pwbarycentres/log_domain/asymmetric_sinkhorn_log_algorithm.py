@@ -359,7 +359,7 @@ def debiasing_dual_potential_update(dp, d, barycentre, epsilon, return_s=False):
 
     
 
-def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing, tol=1e-12):
+def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing, tol=1e-14):
     """
 
     Wanted behaviour: given node k and edge (k,j) or (j,k) perform the reduction
