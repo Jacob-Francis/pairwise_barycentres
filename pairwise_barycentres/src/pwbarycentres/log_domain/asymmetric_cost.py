@@ -62,7 +62,10 @@ def asymmetric_cost(
         else:
             # calcualte UOT_(e,e)
             # can choose any edge since they should be the same
+            assert np.allclose(fixed_barycentre, dp.data_dict[edge[0]]["density"].cpu().numpy()), "Fixed barycentre should be the same as the barycentre node in the edge"
             debiasing_term = symmetric_cost(dp, edge[0], epsilon, rho, aprox='balanced', max_iterates=2000, tol=1e-9)
+            debiasing_term *= -0.5
+            print("Debiasing term calculated using fixed barycentre: ", debiasing_term.item())
 
         full_cost = sum(us_e) + debiasing_term.item() - np.stack(uot_mu_mu).sum()/2
         full_cost = full_cost.item()
