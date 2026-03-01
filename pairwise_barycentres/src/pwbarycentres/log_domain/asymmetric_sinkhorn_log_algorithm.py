@@ -152,7 +152,7 @@ def asymmetric_sinkhorn_log_algorithm(
                 torch.norm(new_a - dp.data_dict[edge[0]]["f"], p=float("inf")).item(),
             )
             dp.data_dict[edge[0]]["f"] = new_a
-
+        
         # Update debiasing potential
         if debiasing and fixed_barycentre is None: # if fixed barycentre we don't need to update the debiasing potential as it depends on the barycentre grid which is fixed
             if count_iterates % debiasing_update_freq == 0 and type(debiasing_update_freq)==int and debiasing_update_freq > 0 :
@@ -171,17 +171,19 @@ def asymmetric_sinkhorn_log_algorithm(
                 for edges in dp.graph.edges:
                     dp.data_dict[edges[0]]["debiased_potential"] = d
 
-
         # Tolerance and err_potentials or checks
         potential_error_list.append(err_potentials)
         barycentre_error_list.append(err_barycentres)
         
         # constraints on all variables
         if measure_constraints:
-            sum_b, sum_f, sum_d, sum_g = measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, d, debiasing)
+            barycentre = balanced_log_barycentre_updates(dp, d, eps, debiasing=debiasing)
+
+            sum_b, sum_f, sum_d, sum_g = measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12)
+
+            constraints_dict['partial_d'].append(sum_d)
             constraints_dict['partial_bary'].append(sum_b)
             constraints_dict['partial_f'].append(sum_f)
-            constraints_dict['partial_d'].append(sum_d)
             constraints_dict['partial_g'].append(sum_g)
 
             err = np.mean([abs(sum_b), abs(sum_f), abs(sum_d), abs(sum_g)])
@@ -426,29 +428,37 @@ def balanced_log_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon, debia
 # --------------------------------------------------------
 #   MEASURE CONSTRAINTS
 # ---------------------------------------------------------
-def measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12):
 
+def sum_bary_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12):
     # barycentre derivative constraint:
     sum_bary = 0
     for e1, e2, w in dp.graph.edges(data=True):
         sum_bary += dp.data_dict[e1]["f"] * w["weight"]
     if debiasing:
-        # -1e3 to match the values whif takes
+        # -1e3 to match the values where we take
         sum_bary -=  torch.where(d > tol, epsilon *torch.log(d), -1e3*torch.ones_like(d))
+    
+    return sum_bary.mean().item()
 
-    # f (potenital on barycentre) constraint: balanced constraint avergage over leaf nodes
+def sum_f_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12):
+     # f (potenital on barycentre) constraint: balanced constraint avergage over leaf nodes
     sum_f = 0
     for e1, e2, w in dp.graph.edges(data=True):
         marginal = calculate_node_marginal(dp, e1, epsilon, debiasing=False)[0]
         sum_f += (barycentre - marginal)* w["weight"]
     
+    return sum_f.mean().item()
+
+def sum_d_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12):
     # debiasing dual potential constraint: 
     if debiasing:
         s = debiasing_dual_potential_update(dp, d, barycentre, epsilon, return_s=True)
         sum_d = - barycentre / (d + 1e-12) + s
     else:
         sum_d = torch.zeros_like(barycentre)
+    return sum_d.mean().item()
 
+def sum_g_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12):
     for e1, e2, w in dp.graph.edges(data=True):
         assert e1 % 2 == 0, "e1 should be the barycentre node"
         assert e2 % 2 == 1, "e2 should be the data node"
@@ -470,4 +480,16 @@ def measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, 
             marginal = calculate_node_marginal(dp, e2, epsilon, debiasing)[0]
             sum_g.append((torch.where(dp.data_dict[e2]["density"] > tol, dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
 
-    return sum_bary.mean().item(), sum_f.mean().item(), sum_d.mean().item(), np.mean(sum_g)
+    return np.mean(sum_g)
+
+def measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12):
+
+    sum_bary = sum_bary_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12)
+
+    sum_f = sum_f_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12)
+    
+    sum_d = sum_d_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12)
+
+    sum_g = sum_g_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12)
+    
+    return sum_bary, sum_f, sum_d, sum_g
