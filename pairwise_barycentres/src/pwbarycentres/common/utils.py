@@ -378,7 +378,8 @@ def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho, tol=1e-14):
         return torch.sum(torch.where(data > tol, f * data, torch.zeros_like(data)))
     elif aprox == "tv":
         assert (f <= rho).all(), "a should be less than rho for tv aprox"
-        return torch.sum(torch.where(data > tol, (torch.maximum(-f, -rho)) * data, torch.zeros_like(data)))
+        assert (f >= -rho).all(), "a should be greater than -rho for tv aprox"
+        return -torch.sum(torch.where(data > tol, (torch.maximum(-f, -rho)) * data, torch.zeros_like(data)))
     else:
         raise NotImplementedError("Only kl, tv and balanced aprox implemented")
 
