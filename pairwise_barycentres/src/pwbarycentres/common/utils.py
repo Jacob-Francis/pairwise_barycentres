@@ -365,7 +365,7 @@ def _dual_cost_data_term(a, data, aprox, epsilon, rho):
     else:
         raise NotImplementedError("Only kl and balanced aprox implemented")
 
-def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho, tol=1e-14):
+def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho, tol=1e-12):
     '''
     Handles the double negative inside here! Don't add another
     '''
