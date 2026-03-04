@@ -144,7 +144,14 @@ def _asymmetric_individual_edge_primal_cost(dp, edge, epsilon, rho, aprox, debia
     g = dp.data_dict[bary_node]["f"]
 
     # transport term
-    c_pi = c_pi_term(f, g, dp.data_dict[data_node]["grid"], dp.data_dict[bary_node]["grid"], epsilon)
+    # tuple or not
+    if isinstance(dp.data_dict[data_node]["grid"], tuple):
+        grid_data = torch.cartesian_prod(*dp.data_dict[data_node]["grid"])
+        grid_bary = torch.cartesian_prod(*dp.data_dict[bary_node]["grid"])
+    else:
+        grid_data = dp.data_dict[data_node]["grid"]
+        grid_bary = dp.data_dict[bary_node]["grid"]
+    c_pi = c_pi_term(f, g, dp._torch_numpy_process(grid_data), dp._torch_numpy_process(grid_bary), epsilon)
     
     # divergence term: forced debaising false because we don't attach d anymore to the kernel
     bary_marginal = calculate_node_marginal(dp, bary_node, epsilon, debiasing=False)[0]
