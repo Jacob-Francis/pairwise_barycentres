@@ -233,5 +233,43 @@ def fg_reduction_ij(Fi, Gj, Xi, Yj, epsilon, aj):
     temp = torch.exp(temp[:, 0])*temp[:, 1]
     return temp.view(-1, 1) 
 
+
+
+_pykeops_c_pi_term = Genred(
+    f"((F + G - IntInv(2)*SqDist(X, Y))/E)",
+    ["F = Vi(1)", 
+     "G = Vj(1)", 
+    f"X = Vi(2)", 
+    f"Y = Vj(2)",  
+    "E = Pm(1)",
+    ],
+    reduction_op="Max_SumShiftExpWeight",
+    axis=0,
+    formula2="IntInv(2)*SqDist(X, Y)",
+)
+
+
+def c_pi_term(Fi, Gj, Xi, Yj, epsilon):
+    """
+    "f = Vj(1)",  # Geo: 1 scalar per line
+    "F = Vi(1)",  # Geo: 1 scalar per line
+    f"X = Vi(2)",  # Geo: 2-dim
+    f"Y = Vj(2)",  # Uni: 1 scalar per line
+    "E = Pm(1)",  # parameter: 1 scalar per line
+
+
+    """
+    temp =  _pykeops_c_pi_term(
+        Fi,
+        Gj,
+        Xi,
+        Yj,
+        epsilon.view(-1,1),
+    )
+
+    temp = torch.exp(temp[:, 0])*temp[:, 1]
+
+    return temp.sum()
+
 if __name__ == "__main__":
     pass
