@@ -28,6 +28,7 @@ def asymmetric_sinkhorn_log_algorithm(
     debiasing: bool = True,
     verbose: bool = False,
     measure_constraints=False,
+    termination_criterion="barycentre",
     lags=None,
     energy_tracking=False,
     fixed_barycentre=None
@@ -47,6 +48,7 @@ def asymmetric_sinkhorn_log_algorithm(
         barycentre_old = dp._torch_numpy_process(fixed_barycentre).reshape(*d.shape)
         # update the barycentre in the dictionary
         for edge in dp.graph.edges:
+            print('Updating barycentre in dictionary for fixed barycentre case', edge[0])
             dp.data_dict[edge[0]]["density"] = barycentre
 
     # Preprocess dictionary for barycentre computation
@@ -135,6 +137,7 @@ def asymmetric_sinkhorn_log_algorithm(
             # update the barycentre in the dictionary
             for edge in dp.graph.edges:
                 dp.data_dict[edge[0]]["density"] = barycentre
+            
         else:
             # need another error term to check convergence
             err_barycentres = err_potentials
@@ -177,19 +180,18 @@ def asymmetric_sinkhorn_log_algorithm(
         
         # constraints on all variables
         if measure_constraints:
-            barycentre = balanced_log_barycentre_updates(dp, d, eps, debiasing=debiasing)
-
-            sum_b, sum_f, sum_d, sum_g = measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12)
+            sum_b, sum_f, sum_d, sum_g = measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, d, debiasing)
 
             constraints_dict['partial_d'].append(sum_d)
             constraints_dict['partial_bary'].append(sum_b)
             constraints_dict['partial_f'].append(sum_f)
             constraints_dict['partial_g'].append(sum_g)
 
-            err = np.mean([abs(sum_b), abs(sum_f), abs(sum_d), abs(sum_g)])
+            constraint_err = np.mean([abs(sum_b), abs(sum_f), abs(sum_d), abs(sum_g)])
         else:
             err = err_barycentres
         count_iterates += 1
+
 
         if energy_tracking:
             _, _, breakdown_dict = asymmetric_cost(
@@ -231,6 +233,14 @@ def asymmetric_sinkhorn_log_algorithm(
                 if verbose:
                     print("Finishing annealing at count_iterates ", count_iterates)
 
+            if termination_criterion == "barycentre":
+                err = barycentre_error_list[-1]
+            elif termination_criterion == "potential":
+                err = potential_error_list[-1]
+            elif termination_criterion == "constraint" and measure_constraints:
+                err = constraint_err
+            else:
+                raise ValueError("Invalid termination criterion")
     if verbose:
         print(
             f"Sinkhorn finished after {count_iterates} iterations with barycentre error {err_barycentres} and potential error {err_potentials}"
@@ -361,7 +371,7 @@ def debiasing_dual_potential_update(dp, d, barycentre, epsilon, return_s=False):
 
     
 
-def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing, tol=1e-14):
+def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing, zero_tol=1e-12):
     """
 
     Wanted behaviour: given node k and edge (k,j) or (j,k) perform the reduction
@@ -389,20 +399,16 @@ def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing, tol=1e-1
     # 'add' data terms s = eps log(data) - s
     data = dp.data_dict[k]["density"]
     if aprox == "balanced":
-        temp = torch.where(data > tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
+        temp = torch.where(data > zero_tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
     elif aprox == 'kl':
-        temp = torch.where(data > tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
+        temp = torch.where(data > zero_tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
         # contract
         temp *= rho/ (rho + epsilon)
     elif aprox == 'tv':
-        temp = torch.where(data > tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
+        temp = torch.where(data > zero_tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
         # contract - maybe clamp  then where? 
         temp = torch.clamp(temp, min=-rho, max=rho)
 
-    # # testing aprox step
-    # if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
-    #     raise ValueError("log_sinkhorn_update NaN/inf detected in approx step", temp.sum().item(), k, edge)
-    
     return temp
 
 
@@ -429,18 +435,23 @@ def balanced_log_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon, debia
 #   MEASURE CONSTRAINTS
 # ---------------------------------------------------------
 
-def sum_bary_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12):
+def sum_bary_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-12):
     # barycentre derivative constraint:
     sum_bary = 0
     for e1, e2, w in dp.graph.edges(data=True):
-        sum_bary += dp.data_dict[e1]["f"] * w["weight"]
+        # there will be many large values from where the density is close to zero
+        # what do i do with these...
+        sum_bary += torch.where(
+            dp.data_dict[e1]["density"] > zero_tol,  
+            dp.data_dict[e1]["f"] * w["weight"], 
+            torch.zeros_like(barycentre)) 
+        # sum_bary += dp.data_dict[e1]["f"] * w["weight"]
     if debiasing:
-        # -1e3 to match the values where we take
-        sum_bary -=  torch.where(d > tol, epsilon *torch.log(d), -1e3*torch.ones_like(d))
-    
+        sum_bary -=  torch.where(d > zero_tol, epsilon *torch.log(d), torch.zeros_like(d))
+
     return sum_bary.mean().item()
 
-def sum_f_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12):
+def sum_f_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-12):
      # f (potenital on barycentre) constraint: balanced constraint avergage over leaf nodes
     sum_f = 0
     for e1, e2, w in dp.graph.edges(data=True):
@@ -449,16 +460,16 @@ def sum_f_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, 
     
     return sum_f.mean().item()
 
-def sum_d_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12):
+def sum_d_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-12):
     # debiasing dual potential constraint: 
     if debiasing:
         s = debiasing_dual_potential_update(dp, d, barycentre, epsilon, return_s=True)
-        sum_d = - barycentre / (d + 1e-12) + s
+        sum_d = - barycentre / (d + zero_tol) + s
     else:
         sum_d = torch.zeros_like(barycentre)
     return sum_d.mean().item()
 
-def sum_g_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12):
+def sum_g_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-12):
     for e1, e2, w in dp.graph.edges(data=True):
         assert e1 % 2 == 0, "e1 should be the barycentre node"
         assert e2 % 2 == 1, "e2 should be the data node"
@@ -468,28 +479,28 @@ def sum_g_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, 
     if aprox == "balanced":
         for e1, e2, w in dp.graph.edges(data=True):
             marginal = calculate_node_marginal(dp, e2, epsilon, debiasing=False)[0]
-            sum_g.append((torch.where(dp.data_dict[e2]["density"] > tol, dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
+            sum_g.append((torch.where(dp.data_dict[e2]["density"] > zero_tol, dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
     if aprox == 'kl':
         for e1, e2, w in dp.graph.edges(data=True):
             marginal = calculate_node_marginal(dp, e2, epsilon, debiasing)[0]
-            sum_g.append((torch.where(dp.data_dict[e2]["density"] > tol, torch.exp(-dp.data_dict[e2]["f"]/rho)*dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
+            sum_g.append((torch.where(dp.data_dict[e2]["density"] > zero_tol, torch.exp(-dp.data_dict[e2]["f"]/rho)*dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
     if aprox == 'tv':
         for e1, e2, w in dp.graph.edges(data=True):
 
             assert  (dp.data_dict[e2]["f"] <= rho).all(), "f should be clamped to +- rho in TV aproximation"
             marginal = calculate_node_marginal(dp, e2, epsilon, debiasing)[0]
-            sum_g.append((torch.where(dp.data_dict[e2]["density"] > tol, dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
+            sum_g.append((torch.where(dp.data_dict[e2]["density"] > zero_tol, dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
 
     return np.mean(sum_g)
 
-def measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12):
+def measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-12):
 
-    sum_bary = sum_bary_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12)
+    sum_bary = sum_bary_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=zero_tol)
 
-    sum_f = sum_f_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12)
+    sum_f = sum_f_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=zero_tol)
     
-    sum_d = sum_d_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12)
+    sum_d = sum_d_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=zero_tol)
 
-    sum_g = sum_g_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, tol=1e-12)
+    sum_g = sum_g_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=zero_tol)
     
     return sum_bary, sum_f, sum_d, sum_g
