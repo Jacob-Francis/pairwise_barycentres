@@ -104,8 +104,8 @@ def test_fixed_bary_margainls_uniform_centre(
     )
 
     # No need to check bary and d constraints
-    assert constraints_dict['partial_g'][-1] < 1e-6, "key: " + key + " value: " + str(constraints_dict[key][-1])  # less than tolerance
-    assert constraints_dict['partial_f'][-1] < 1e-6, "key: " + key + " value: " + str(constraints_dict[key][-1])  # less than tolerance
+    assert constraints_dict['partial_g'][-1] < 1e-6, "key: " + 'partial_g' + " value: " + str(constraints_dict['partial_g'][-1])  # less than tolerance
+    assert constraints_dict['partial_f'][-1] < 1e-6, "key: " + 'partial_f' + " value: " + str(constraints_dict['partial_f'][-1])  # less than tolerance
 
     # if given no nodes then they should all be returned
     marginals = ot_marginals(
