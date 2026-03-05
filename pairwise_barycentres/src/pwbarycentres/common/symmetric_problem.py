@@ -146,7 +146,7 @@ def symmetric_mat_vec_chizat_method(dp, k, epsilon, rho, aprox):
     
     return one_chizat_update
 
-def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, tol=1e-12):
+def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, zero_tol=1e-12):
     '''
     k is the node which contains data mu_k, and then solving UOT^{phi, phi}(mu_k, mu_kl)
     '''
@@ -193,13 +193,13 @@ def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, tol=1e-12):
         s += 2*epsilon* np.log(1/np.prod(data.shape)) 
 
         if aprox == "balanced":
-            temp = epsilon * torch.log(data) - s #torch.where(data > tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
+            temp = torch.where(data > zero_tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
         elif aprox == 'kl':
-            temp = torch.where(data > tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
+            temp = torch.where(data > zero_tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
             # contract
             temp *= rho/ (rho + epsilon)
         elif aprox == 'tv':
-            temp = torch.where(data > tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
+            temp = torch.where(data > zero_tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
             # contract - maybe clamp  then where? 
             temp = torch.clamp(temp, min=-rho, max=rho)
 
