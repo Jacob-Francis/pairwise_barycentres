@@ -146,7 +146,7 @@ def symmetric_mat_vec_chizat_method(dp, k, epsilon, rho, aprox):
     
     return one_chizat_update
 
-def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, zero_tol=1e-12):
+def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, zero_tol=1e-40):
     '''
     k is the node which contains data mu_k, and then solving UOT^{phi, phi}(mu_k, mu_kl)
     '''

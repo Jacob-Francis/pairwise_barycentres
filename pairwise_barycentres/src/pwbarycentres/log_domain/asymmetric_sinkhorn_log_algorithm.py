@@ -8,7 +8,6 @@ from ..common.utils import (
     _tensorised_sinkhorn_reduction,
     _tensorised_log_sinkhorn_reduction,
     _flat_grid_sinkhorn_reduction,
-    log_aprox_step,
     _flat_grid_log_sinkhorn_reduction,
     _tensorised_log_sinkhorn_reduction_stabalised
 )
@@ -32,7 +31,8 @@ def asymmetric_sinkhorn_log_algorithm(
     termination_criterion="barycentre",
     lags=None,
     energy_tracking=False,
-    fixed_barycentre=None
+    fixed_barycentre=None,
+    zero_tol=1e-40
 ):
     # shorten to pass around
     dp = data_processor
@@ -113,7 +113,7 @@ def asymmetric_sinkhorn_log_algorithm(
 
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[1]
-            new_b = log_sinkhorn_update(dp, edge[1], edge, eps, rho, aprox, d=None, debiasing=True) # if False the d=None!
+            new_b = log_sinkhorn_update(dp, edge[1], edge, eps, rho, aprox, d=None, debiasing=True, zero_tol=zero_tol) # if False the d=None!
             if torch.any(torch.isnan(new_b)) or torch.any(torch.isinf(new_b)):
                 raise ValueError("B NaN detected in sinkhorn update", new_b.sum().item(), count_iterates, edge, eps)
             # calculate quasi convergnece
@@ -148,7 +148,7 @@ def asymmetric_sinkhorn_log_algorithm(
         # project on second edge corresponding to the barycentre
         for edge in dp.graph.edges:
             # project on barycentre nodes edges[0]
-            new_a = log_sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced", d=None, debiasing=True)
+            new_a = log_sinkhorn_update(dp, edge[0], edge, eps, rho, aprox="balanced", d=None, debiasing=True, zero_tol=zero_tol) 
             if torch.any(torch.isnan(new_a)) or torch.any(torch.isinf(new_a)):
                 raise ValueError("A NaN detected in sinkhorn update", new_a.sum().item(), count_iterates, edge)
             # calculate quasi convergnece
@@ -190,8 +190,7 @@ def asymmetric_sinkhorn_log_algorithm(
             constraints_dict['partial_g'].append(sum_g)
 
             constraint_err = np.mean([abs(sum_b), abs(sum_f), abs(sum_d), abs(sum_g)])
-        else:
-            err = err_barycentres
+
         count_iterates += 1
 
 
@@ -236,14 +235,15 @@ def asymmetric_sinkhorn_log_algorithm(
                 if verbose:
                     print("Finishing annealing at count_iterates ", count_iterates)
 
-            if termination_criterion == "barycentre":
-                err = barycentre_error_list[-1]
-            elif termination_criterion == "potential":
-                err = potential_error_list[-1]
-            elif termination_criterion == "constraint" and measure_constraints:
-                err = constraint_err
-            else:
-                raise ValueError("Invalid termination criterion")
+        if termination_criterion == "barycentre":
+            err = barycentre_error_list[-1]
+        elif termination_criterion == "potential":
+            err = potential_error_list[-1]
+        elif termination_criterion == "constraint" and measure_constraints:
+            err = constraint_err
+        else:
+            raise ValueError("Invalid termination criterion")
+    
     if verbose:
         print(
             f"Sinkhorn finished after {count_iterates} iterations with barycentre error {err_barycentres} and potential error {err_potentials}"
@@ -311,10 +311,6 @@ def _log_reduction_for_sinkhorn(dp, k, edge, epsilon, d=None, debiasing=True):
             epsilon,
         )
 
-        # testing for NaN/inf
-        # if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
-        #     raise ValueError("Tensorised reduction NaN/inf detected", temp.sum().item(), k, edge)
-
     # Otherwise PyKeOps
     elif "grid" in dp.data_dict[edge[0]] and "grid" in dp.data_dict[edge[1]]:
         temp = _flat_grid_log_sinkhorn_reduction(
@@ -326,10 +322,6 @@ def _log_reduction_for_sinkhorn(dp, k, edge, epsilon, d=None, debiasing=True):
             epsilon,
         )
 
-        # testing for NaN/inf
-        # if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
-        #     raise ValueError("Flat grid reduction NaN/inf detected", temp.sum().item(), k, edge)
-    
     assert temp.shape == dp.data_dict[edge[0] if k == edge[1] else edge[1]]["f"].shape, "Reduction shape incorrect"
     
     return temp + np.log(1/np.prod(f.shape))
@@ -369,15 +361,6 @@ def _bary_reduction_for_sinkhorn(dp, k, edge, epsilon):
     # Can I tensorise?
     if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
         
-        # temp = _tensorised_log_sinkhorn_reduction(
-        # temp = _tensorised_log_sinkhorn_reduction_stabalised(
-        #     f,
-        #     d_temp,
-        #     ind,
-        #     dp.data_dict[edge]["x1y1"],
-        #     dp.data_dict[edge]["x2y2"],
-        #     epsilon,
-        # )
         temp = _tensorised_sinkhorn_reduction(
             torch.exp(f/epsilon), 
             dp.data_dict[edge]["x1y1"],
@@ -460,7 +443,7 @@ def debiasing_dual_potential_update(dp, d, barycentre, epsilon, return_s=False):
 
     
 
-def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing, zero_tol=1e-12):
+def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing, zero_tol=1e-40):
     """
 
     Wanted behaviour: given node k and edge (k,j) or (j,k) perform the reduction
@@ -474,33 +457,26 @@ def log_sinkhorn_update(dp, k, edge, epsilon, rho, aprox, d, debiasing, zero_tol
     assert k in edge
 
     #  reduction across the opposite potential
-    # dp, edge[1] if k == edge[0] else edge[0], edge, epsilon, d, debiasing=debiasing
-    pot_before = dp.data_dict[k]["f"].sum().item()
-    
     s = epsilon*_log_reduction_for_sinkhorn(
         dp, edge[1] if k == edge[0] else edge[0], edge, epsilon, d, debiasing=debiasing
     )
 
-    # if torch.any(torch.isnan(s)) or torch.any(torch.isinf(s)):
-    #     raise ValueError("Before sum",pot_before, s.sum().item(), k, edge, epsilon)
-
     # constants;
     s += epsilon* np.log(1/np.prod(dp.data_dict[k]["f"].shape)) 
 
-    # if torch.any(torch.isnan(s)) or torch.any(torch.isinf(s)):
-    #     raise ValueError("log_sinkhorn_update NaN/inf detected in sinkhorn update", s.sum().item(), k, edge, epsilon)
-
     # 'add' data terms s = eps log(data) - s
     data = dp.data_dict[k]["density"]
+
+    data = torch.clamp(data, min=zero_tol) # to avoid log of zero
+    temp = epsilon * torch.log(data) - s
+
     if aprox == "balanced":
-        temp = torch.where(data > zero_tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
+        pass
     elif aprox == 'kl':
-        temp = torch.where(data > zero_tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
         # contract
         temp *= rho/ (rho + epsilon)
     elif aprox == 'tv':
-        temp = torch.where(data > zero_tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
-        # contract - maybe clamp  then where? 
+        # contract  
         temp = torch.clamp(temp, min=-rho, max=rho)
 
     if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
@@ -518,12 +494,13 @@ def balanced_log_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon, debia
 
     barycentre = d.clone() # becasue we've pulled d out the front
     for e1, e2, w in dp.graph.edges(data=True):
-        # s = _log_reduction_for_sinkhorn(dp, e2, (e1, e2), epsilon) # d attacched before
-        # s += np.log(1/np.prod(dp.data_dict[e1]["f"].shape)) # to counteract the log reduction normalisation
-        # barycentre *= torch.exp(s) ** w["weight"]
-        s = _bary_reduction_for_sinkhorn(dp, e2, (e1, e2), epsilon) # d attacched before
-        s /= np.prod(dp.data_dict[e1]["f"].shape) # to counteract the log reduction normalisation
-        barycentre *= s ** w["weight"]
+        s = _log_reduction_for_sinkhorn(dp, e2, (e1, e2), epsilon) # d attacched before
+        s += np.log(1/np.prod(dp.data_dict[e1]["f"].shape)) # to counteract the log reduction normalisation
+        barycentre *= torch.exp(s) ** w["weight"]
+        # s = _bary_reduction_for_sinkhorn(dp, e2, (e1, e2), epsilon) # d attacched before
+        # s /= np.prod(dp.data_dict[e1]["f"].shape) # to counteract the log reduction normalisation
+        # barycentre *= s ** w["weight"]
+    
     # check broadcasting is correct
     assert barycentre.shape == d.shape
 
@@ -539,23 +516,24 @@ def balanced_log_barycentre_updates(dp: SinkhornDataProcessor, d, epsilon, debia
 #   MEASURE CONSTRAINTS
 # ---------------------------------------------------------
 
-def sum_bary_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-12):
+def sum_bary_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-40):
     # barycentre derivative constraint:
     sum_bary = 0
     for e1, e2, w in dp.graph.edges(data=True):
         # there will be many large values from where the density is close to zero
         # what do i do with these...
         sum_bary += torch.where(
-            dp.data_dict[e1]["density"] > zero_tol,  
+            dp.data_dict[e1]["density"] >= zero_tol,  
             dp.data_dict[e1]["f"] * w["weight"], 
             torch.zeros_like(barycentre)) 
         # sum_bary += dp.data_dict[e1]["f"] * w["weight"]
     if debiasing:
-        sum_bary -=  torch.where(d > zero_tol, epsilon *torch.log(d), torch.zeros_like(d))
+        dtemp = torch.clamp(d, min=zero_tol) # to avoid log of zero
+        sum_bary -=  epsilon *torch.log(dtemp)
 
     return sum_bary.mean().item()
 
-def sum_f_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-12):
+def sum_f_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-40):
      # f (potenital on barycentre) constraint: balanced constraint avergage over leaf nodes
     sum_f = 0
     for e1, e2, w in dp.graph.edges(data=True):
@@ -564,7 +542,7 @@ def sum_f_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, 
     
     return sum_f.mean().item()
 
-def sum_d_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-12):
+def sum_d_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-40):
     # debiasing dual potential constraint: 
     if debiasing:
         s = debiasing_dual_potential_update(dp, d, barycentre, epsilon, return_s=True)
@@ -573,7 +551,7 @@ def sum_d_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, 
         sum_d = torch.zeros_like(barycentre)
     return sum_d.mean().item()
 
-def sum_g_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-12):
+def sum_g_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-40):
     for e1, e2, w in dp.graph.edges(data=True):
         assert e1 % 2 == 0, "e1 should be the barycentre node"
         assert e2 % 2 == 1, "e2 should be the data node"
@@ -583,21 +561,23 @@ def sum_g_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, 
     if aprox == "balanced":
         for e1, e2, w in dp.graph.edges(data=True):
             marginal = calculate_node_marginal(dp, e2, epsilon, debiasing=False)[0]
-            sum_g.append((torch.where(dp.data_dict[e2]["density"] > zero_tol, dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
+            sum_g.append(((dp.data_dict[e2]["density"] - marginal) * w["weight"]).sum().item())
+            # sum_g.append((torch.where(dp.data_dict[e2]["density"] > zero_tol, dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
     if aprox == 'kl':
         for e1, e2, w in dp.graph.edges(data=True):
             marginal = calculate_node_marginal(dp, e2, epsilon, debiasing)[0]
-            sum_g.append((torch.where(dp.data_dict[e2]["density"] > zero_tol, torch.exp(-dp.data_dict[e2]["f"]/rho)*dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
+            sum_g.append(((torch.exp(-dp.data_dict[e2]["f"]/rho)*dp.data_dict[e2]["density"] - marginal) * w["weight"]).sum().item())
+            # sum_g.append((torch.where(dp.data_dict[e2]["density"] > zero_tol, torch.exp(-dp.data_dict[e2]["f"]/rho)*dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
     if aprox == 'tv':
         for e1, e2, w in dp.graph.edges(data=True):
-
             assert  (dp.data_dict[e2]["f"] <= rho).all(), "f should be clamped to +- rho in TV aproximation"
             marginal = calculate_node_marginal(dp, e2, epsilon, debiasing)[0]
-            sum_g.append((torch.where(dp.data_dict[e2]["density"] > zero_tol, dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
+            sum_g.append(((dp.data_dict[e2]["density"] - marginal) * w["weight"]).sum().item())
+            # sum_g.append((torch.where(dp.data_dict[e2]["density"] > zero_tol, dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
 
     return np.mean(sum_g)
 
-def measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-12):
+def measure_constraint_log_sinkhorn_update(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-40):
 
     sum_bary = sum_bary_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=zero_tol)
 

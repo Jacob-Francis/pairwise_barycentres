@@ -80,45 +80,43 @@ def chizat_proxdiv_step(s, epsilon, rho, p, aprox="kl", u=None):
         raise NotImplementedError("Only kl and balanced aprox implemented")
 
 
-def kl_log_aprox(s, epsilon, rho, p, tol=1e-12):
-    """_summary_
+# def kl_log_aprox(s, epsilon, rho, p, zero_tol=1e-12):
+#     """_summary_
 
-    Parameters
-    ----------
-    s : _type_
-        Reduction term`
-    epsilon : _type_
-        _description_
-    rho : _type_
-        _description_
-    p : _type_
-        data term 
+#     Parameters
+#     ----------
+#     s : _type_
+#         Reduction term`
+#     epsilon : _type_
+#         _description_
+#     rho : _type_
+#         _description_
+#     p : _type_
+#         data term 
 
-    Returns
-    -------
-    _type_
-        _description_
-    """
-    # ToD(o - do i return zero or s?
-    return  torch.where(p>tol, (s - epsilon*torch.log(p)) * rho/(epsilon + rho), 1e3*torch.ones_like(s))
+#     Returns
+#     -------
+#     _type_
+#         _description_
+#     """
+#     # ToD(o - do i return zero or s?
+#     return  torch.where(p>zero_tol, (s - epsilon*torch.log(p)) * rho/(epsilon + rho), 1e3*torch.ones_like(s))
 
-def balanced_log_aprox(s, epsilon, rho, p, tol=1e-12):
-    return torch.where(p>tol, s - epsilon*torch.log(p), 1e3*torch.ones_like(s))
+# def balanced_log_aprox(s, epsilon, rho, p, tol=1e-12):
+#     return torch.where(p>tol, s - epsilon*torch.log(p), 1e3*torch.ones_like(s))
 
-def log_aprox_step(s, epsilon, rho, p, aprox="kl"):
-    """
-    u is for kernel truncation purposes which may be useful later
-    """
-    if aprox == "kl":
-        return kl_log_aprox(s, epsilon, rho, p)
-    elif aprox == "balanced":
-        return balanced_log_aprox(s, epsilon, rho, p)
-    elif aprox == "tv":
-        raise NotImplementedError("Only kl and balanced aprox implemented")
-    else:
-        raise NotImplementedError("Only kl and balanced aprox implemented")
-
-
+# def log_aprox_step(s, epsilon, rho, p, aprox="kl"):
+#     """
+#     u is for kernel truncation purposes which may be useful later
+#     """
+#     if aprox == "kl":
+#         return kl_log_aprox(s, epsilon, rho, p)
+#     elif aprox == "balanced":
+#         return balanced_log_aprox(s, epsilon, rho, p)
+#     elif aprox == "tv":
+#         raise NotImplementedError("Only kl and balanced aprox implemented")
+#     else:
+#         raise NotImplementedError("Only kl and balanced aprox implemented")
 
 
 
@@ -201,9 +199,8 @@ def _tensorised_log_sinkhorn_reduction_stabalised(f, d, ind, x1y1, x2y2, epsilon
     """
     # kernel computations - K @ a
     # main bottle neck
-    stabiliser = -torch.min(f / epsilon)
+    stabiliser = torch.max(f / epsilon)
     print("stabiliser", stabiliser)
-    # stabiliser = 0.0
     temp = torch.exp(f / epsilon - stabiliser)
     if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
         raise ValueError("NaN/inf detected in exp stabiliser", temp.min().item(), temp.max().item(), temp.sum().item(), stabiliser.item())
@@ -213,13 +210,7 @@ def _tensorised_log_sinkhorn_reduction_stabalised(f, d, ind, x1y1, x2y2, epsilon
     else:
         temp = d*tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), torch.exp(f / epsilon - stabiliser))
 
-    # if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
-    #     raise ValueError("NaN/inf detected in reduction", temp.min().item(), temp.max().item(), temp.sum().item(),)
-    
-    # temp = torch.clamp(temp, min=1e-40)
     s = torch.log(temp) + stabiliser
-    # if torch.any(torch.isnan(s)) or torch.any(torch.isinf(s)):
-    #     raise ValueError("NaN/inf detected in LOG", temp.min().item(), temp.max().item(), s.sum().item())
 
     return torch.log(temp) + stabiliser
 
@@ -271,7 +262,7 @@ def generate_barycentredataprocessor(
             "density": None,  # this is the bayrcentre which will have a uniform density to start
             "grid": barycentre_grid,
         }
-        if grid:
+        if grid is not None:
             data_dict[counter + 1] = {
                 "density": data[i][0] if not force_pykeops else data[i][0].reshape(-1),
                 "grid": grid if grid is not None else data[i][1],
@@ -423,7 +414,7 @@ def _dual_cost_data_term(a, data, aprox, epsilon, rho):
     else:
         raise NotImplementedError("Only kl and balanced aprox implemented")
 
-def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho, zero_tol=1e-12):
+def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho, zero_tol=1e-40):
     '''
     Handles the double negative inside here! Don't add another
     '''
@@ -431,13 +422,13 @@ def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho, zero_tol=1e-1
     assert f.shape == data.shape, "Shapes of f and data should match"
     
     if aprox == "kl":
-        return torch.where(data > zero_tol, -rho * (torch.exp(-f / rho) - 1) * data, torch.zeros_like(data)).sum()
+        return torch.where(data >= zero_tol, -rho * (torch.exp(-f / rho) - 1) * data, torch.zeros_like(data)).sum()
     elif aprox == "balanced":
-        return torch.sum(torch.where(data > zero_tol, f * data, torch.zeros_like(data)))
+        return torch.sum(torch.where(data >= zero_tol, f * data, torch.zeros_like(data)))
     elif aprox == "tv":
         assert (f <= rho).all(), "a should be less than rho for tv aprox"
         assert (f >= -rho).all(), "a should be greater than -rho for tv aprox"
-        return -torch.sum(torch.where(data > zero_tol, (torch.maximum(-f, -rho)) * data, torch.zeros_like(data)))
+        return -torch.sum(torch.where(data >= zero_tol, (torch.maximum(-f, -rho)) * data, torch.zeros_like(data)))
     else:
         raise NotImplementedError("Only kl, tv and balanced aprox implemented")
 

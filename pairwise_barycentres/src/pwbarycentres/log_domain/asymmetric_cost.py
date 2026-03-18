@@ -41,7 +41,7 @@ def asymmetric_cost(
         if return_breakdown and primal_cost:
             cost, breakdown = unbal_sinkhorn_div
             us_e.append(cost.item() * weighting.item())
-            _, primal_breakdown = _asymmetric_individual_edge_primal_cost(dp, edge, epsilon, rho, aprox, debiasing, return_breakdown=True, zero_tol=1e-12)
+            _, primal_breakdown = _asymmetric_individual_edge_primal_cost(dp, edge, epsilon, rho, aprox, debiasing, return_breakdown=True, zero_tol=1e-40)
             cost_dict[edge] = {**breakdown, **primal_breakdown}
         elif return_breakdown:
             cost, breakdown = unbal_sinkhorn_div
@@ -145,7 +145,7 @@ def _asymmetric_individual_edge_cost(dp, edge, epsilon, rho, aprox, debiasing, r
     return cost
 
 
-def _asymmetric_individual_edge_primal_cost(dp, edge, epsilon, rho, aprox, debiasing, return_breakdown=False, zero_tol=1e-12):
+def _asymmetric_individual_edge_primal_cost(dp, edge, epsilon, rho, aprox, debiasing, return_breakdown=False, zero_tol=1e-40):
     bary_node = edge[0]
     data_node = edge[1]
     
