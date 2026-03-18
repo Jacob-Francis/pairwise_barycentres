@@ -54,10 +54,11 @@ def calculate_node_marginal(dp: SinkhornDataProcessor, node, epsilon, debiasing)
             else (neighbour, node)
         )
 
-        if 'a' in dp.data_dict[node] and 'a' in dp.data_dict[neighbour]:
+        if 'f' in dp.data_dict[node] and 'f' in dp.data_dict[neighbour]:
+            marginal = fg_potential_marginal_reduction(dp, node, epsilon, False, neighbour, edge)
+        elif 'a' in dp.data_dict[node] and 'a' in dp.data_dict[neighbour]:
             marginal = ab_potential_marginal_reduction(dp, node, epsilon, debiasing, neighbour, edge)
-        elif 'f' in dp.data_dict[node] and 'f' in dp.data_dict[neighbour]:
-            marginal = fg_potential_marginal_reduction(dp, node, epsilon, False, neighbour, edge)  # we never acttch the potential anymore
+          # we never acttch the potential anymore
         else:
             raise Warning(
                 "Node potentials not found or do not match between nodes"
