@@ -193,6 +193,37 @@ def _tensorised_log_sinkhorn_reduction(f, d, ind, x1y1, x2y2, epsilon):
     return torch.log(temp)
 
 
+def _tensorised_log_sinkhorn_reduction_stabalised(f, d, ind, x1y1, x2y2, epsilon):
+    """
+    f dual potential being reduced over
+    d debiasing potential
+    ind - 0 if d and f go together (and are summed), 1 if they are opposite so d is not summed. 
+    """
+    # kernel computations - K @ a
+    # main bottle neck
+    stabiliser = -torch.min(f / epsilon)
+    print("stabiliser", stabiliser)
+    # stabiliser = 0.0
+    temp = torch.exp(f / epsilon - stabiliser)
+    if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
+        raise ValueError("NaN/inf detected in exp stabiliser", temp.min().item(), temp.max().item(), temp.sum().item(), stabiliser.item())
+
+    if ind==0:
+        temp = tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), torch.exp(f / epsilon - stabiliser)*d)
+    else:
+        temp = d*tensorise_f(torch.exp((-x1y1) / epsilon), torch.exp((-x2y2) / epsilon), torch.exp(f / epsilon - stabiliser))
+
+    # if torch.any(torch.isnan(temp)) or torch.any(torch.isinf(temp)):
+    #     raise ValueError("NaN/inf detected in reduction", temp.min().item(), temp.max().item(), temp.sum().item(),)
+    
+    # temp = torch.clamp(temp, min=1e-40)
+    s = torch.log(temp) + stabiliser
+    # if torch.any(torch.isnan(s)) or torch.any(torch.isinf(s)):
+    #     raise ValueError("NaN/inf detected in LOG", temp.min().item(), temp.max().item(), s.sum().item())
+
+    return torch.log(temp) + stabiliser
+
+
 def graph_creator_from_edges_and_weights(edges, weights=None):
     import networkx as nx
 
@@ -207,7 +238,12 @@ def graph_creator_from_edges_and_weights(edges, weights=None):
 
 #
 def generate_barycentredataprocessor(
-    data, barycentre_grid, grid=None, weights=None, cuda_device=None, potentials="a"
+    data, barycentre_grid, 
+    grid=None, 
+    weights=None, 
+    cuda_device=None, 
+    potentials="a",
+    force_pykeops=False
 ):
     """ # Data should be arranged as a list of lists
         # i.e. data[i] = [density, grid]
@@ -220,16 +256,38 @@ def generate_barycentredataprocessor(
     edges = []
     counter = 0
     data_dict = {}
+
+    if force_pykeops:
+        if (grid is not None) and isinstance(grid, tuple):
+            grid = torch.cartesian_prod(*grid)
+        if isinstance(barycentre_grid, tuple):
+            barycentre_grid = torch.cartesian_prod(*[torch.tensor(d) for d in barycentre_grid])
+        else: 
+            raise ValueError("If force_pykeops is True, barycentre_grid should be a tuple of 1D tensors to cartesian product")
+
     for i in range(M):
         edges.append((counter, counter + 1))
         data_dict[counter] = {
             "density": None,  # this is the bayrcentre which will have a uniform density to start
             "grid": barycentre_grid,
         }
-        data_dict[counter + 1] = {
-            "density": data[i][0],
-            "grid": grid if grid is not None else data[i][1],
-        }
+        if grid:
+            data_dict[counter + 1] = {
+                "density": data[i][0] if not force_pykeops else data[i][0].reshape(-1),
+                "grid": grid if grid is not None else data[i][1],
+            }
+        else:
+            if force_pykeops:
+                tempgrid = torch.cartesian_prod(*[torch.tensor(d) for d in data[i][1]])
+                data_dict[counter + 1] = {
+                    "density": data[i][0] if not force_pykeops else data[i][0].reshape(-1),
+                    "grid": tempgrid
+                }
+            else:
+                data_dict[counter + 1] = {
+                    "density": data[i][0],
+                    "grid": data[i][1],
+                }
         counter += 2
     graph = graph_creator_from_edges_and_weights(edges, weights)
 
