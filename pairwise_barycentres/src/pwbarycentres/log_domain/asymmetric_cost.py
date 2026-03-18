@@ -21,7 +21,8 @@ def asymmetric_cost(
     verbose: bool = False,
     fixed_barycentre=None,
     return_breakdown=False,
-    ignore_const=False
+    ignore_const=False,
+    primal_cost=False
 ):
 
     epsilon = dp._torch_numpy_process(epsilon).view(-1, 1)
@@ -36,13 +37,21 @@ def asymmetric_cost(
         unbal_sinkhorn_div = _asymmetric_individual_edge_cost(
             dp, edge, epsilon, rho, aprox, debiasing, return_breakdown
         )
-        if return_breakdown:
+
+        if return_breakdown and primal_cost:
             cost, breakdown = unbal_sinkhorn_div
             us_e.append(cost.item() * weighting.item())
             _, primal_breakdown = _asymmetric_individual_edge_primal_cost(dp, edge, epsilon, rho, aprox, debiasing, return_breakdown=True, zero_tol=1e-12)
             cost_dict[edge] = {**breakdown, **primal_breakdown}
+        elif return_breakdown:
+            cost, breakdown = unbal_sinkhorn_div
+            us_e.append(cost.item() * weighting.item())
+            cost_dict[edge] = {**breakdown}
         else: 
             us_e.append(unbal_sinkhorn_div.item() * weighting.item())
+        
+        
+        
         
         # solve UOT(mu_I, mu_I)
         if debiasing and not ignore_const:
@@ -158,7 +167,7 @@ def _asymmetric_individual_edge_primal_cost(dp, edge, epsilon, rho, aprox, debia
     data_marginal = calculate_node_marginal(dp, data_node, epsilon, debiasing=False)[0]
 
     assert torch.allclose(bary_marginal, dp.data_dict[bary_node]["density"]), "Marginals should have the same total mass"
-    # This term has to be eaul otherwise the cost is infinite, so we can ignore it in the cost calculation
+    # This term has to be eqaual otherwise the cost is infinite, so we can ignore it in the cost calculation
 
     if aprox == "balanced":
         assert torch.allclose(data_marginal, dp.data_dict[data_node]["density"]), "Marginals should have the same total mass"
