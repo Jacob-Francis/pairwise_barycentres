@@ -29,7 +29,7 @@ def symmetric_cost(dp, k, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
     # term1 (2 because its the same potential)
     term1 = 2*_dual_cost_data_term_f_potential(sym_pot, dp.data_dict[k]['density'], aprox, epsilon, rho)
 
-    # need to chagne below 
+    # need to change below 
 
     # term2 - entropic term
     assert 'grid' in dp.data_dict[k], "You may have cleared grids incorrectly"
@@ -56,7 +56,7 @@ def symmetric_cost(dp, k, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
             torch.exp(sym_pot/epsilon),
             torch.exp(sym_pot/epsilon),
         ).sum()
-
+ 
         cost_const = 1
         # _tensorised_marginal_reduction(
         #     *gridding,
@@ -176,6 +176,7 @@ def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, zero_tol=1e-40)
                 *gridding,
                 epsilon
         )
+ 
     else:
         lse = lambda a_g : _flat_grid_log_sinkhorn_reduction(
             a_g,
@@ -190,17 +191,18 @@ def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, zero_tol=1e-40)
     def one_chizat_update(sym_pot):
         data = dp.data_dict[k]["density"]
         s = epsilon*lse(sym_pot)        
-        s += 2*epsilon* np.log(1/np.prod(data.shape)) 
+        s += 2*epsilon* np.log(1/np.prod(data.shape)) # 2 because its sqaured and the same data
+
+        data = torch.clamp(data, min=zero_tol) # to avoid log of zero
+        temp = epsilon * torch.log(data) - s
 
         if aprox == "balanced":
-            temp = torch.where(data > zero_tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
+            pass
         elif aprox == 'kl':
-            temp = torch.where(data > zero_tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
             # contract
             temp *= rho/ (rho + epsilon)
         elif aprox == 'tv':
-            temp = torch.where(data > zero_tol , epsilon * torch.log(data) - s, -1e3*torch.ones_like(s))
-            # contract - maybe clamp  then where? 
+            # contract  
             temp = torch.clamp(temp, min=-rho, max=rho)
 
         return temp
