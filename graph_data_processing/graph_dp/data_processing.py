@@ -55,6 +55,9 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
             see parent class, by default None
         pykeops : bool, optional
             If True then we assume PyKeOps is available and use it for tensorisation, by default True
+        cell_areas:
+            Leb elements a list per entry/ or without it creates its own
+            Actually it creates its own then overwrites this if given some
         """
 
         # old import
@@ -71,13 +74,15 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
         # Run processing of the graph edges
         self.build_edges(grid=grid)
         self._density_processing(density=density)
-        if free_grids:
-            self.free_grid_memory()
+        self.process_cell_areas()
 
         # Useful attributes
         self.num_of_edges = len(self.graph.edges)
 
         self.process_graph_weights()
+
+        if free_grids:
+            self.free_grid_memory()
 
     def process_graph_weights(self):
         # Ensure weight on correct device
@@ -92,6 +97,37 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
                 self.graph[edge[0]][edge[1]]["weight"] = self._torch_numpy_process(
                     self.graph[edge[0]][edge[1]]["weight"]
                 ).view(-1, 1)
+
+    def _cell_area_tuple(self, grid):
+        """
+        grid in shape ((n1), (n2))
+        assume regular
+        """
+        cell_area = (grid[0][1] - grid[0][0]) * (grid[1][1] - grid[1][0])
+
+        return self._torch_numpy_process(cell_area)
+    
+    def _cell_area_tensor(self, grid1):
+        """
+        grid in shape (n1, n2, 2)
+        """
+        x = grid1[..., 0]  # (n1, n2)
+        y = grid1[..., 1]  # (n1, n2)
+        dx_val = (x[1, 0] - x[0, 0])
+        dy_val = (y[0, 1] - y[0, 0])
+        cell_area = dx_val * dy_val
+        return self._torch_numpy_process(cell_area)
+    
+    def _cell_area_flat(self, grid1):
+        """
+        grid in shape (n1*n2, 2)
+        """
+        x = torch.unique(grid1[..., 0], sorted=True)  # (n1*n2)
+        y = torch.unique(grid1[..., 1], sorted=True)  # (n1*n2)
+        dx_val = (x[1] - x[0])
+        dy_val = (y[1] - y[0])
+        cell_area = dx_val * dy_val
+        return self._torch_numpy_process(cell_area)
 
     def _process_grids(self, edge, grid1, grid2):
         """
@@ -115,6 +151,12 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
                 self._cost_for_tuple(grid1, grid2)
             )
 
+            # cell areas: if not given use approximation for regular grid
+            if self.data_dict[edge[0]].get("cell_areas", None) is None:
+                self.data_dict[edge[0]]["cell_areas"] = self._cell_area_tuple(grid1)
+            if self.data_dict[edge[1]].get("cell_areas", None) is None:
+                self.data_dict[edge[1]]["cell_areas"] = self._cell_area_tuple(grid2)
+
         elif len(grid1.shape) == 3 and len(grid2.shape) == 3:
             if self.verbose:
                 print(
@@ -132,6 +174,12 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
                 self._cost_for_meshgrid(grid1, grid2, n1, n2, m1, m2)
             )
 
+            # cell areas - if not given use approximation for regular grid
+            if self.data_dict[edge[0]].get("cell_areas", None) is None:
+                self.data_dict[edge[0]]["cell_areas"] = self._cell_area_tensor(grid1)
+            if self.data_dict[edge[1]].get("cell_areas", None) is None:
+                self.data_dict[edge[1]]["cell_areas"] = self._cell_area_tensor(grid2)
+
             # Prioritise tensoration
         elif self.pykeops == True and not (
             isinstance(grid1, tuple) and isinstance(grid2, tuple)
@@ -146,6 +194,13 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
             self.data_dict[edge[1]]["grid"] = self._clone_process(
                 grid2, non_blocking=True
             )
+
+            # cell areas - if not given use approximation for regular grid
+            if self.data_dict[edge[0]].get("cell_areas", None) is None:
+                self.data_dict[edge[0]]["cell_areas"] = self._cell_area_flat(grid1)
+            if self.data_dict[edge[1]].get("cell_areas", None) is None:
+                self.data_dict[edge[1]]["cell_areas"] = self._cell_area_flat(grid2)
+
         else:
             # I'm not sure I'll ever use this
             raise NotImplementedError("Creating the full dense kernel is not supported")
@@ -164,17 +219,20 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
             n2, m2 = self.data_dict[edge]["x2y2"].shape
 
         # overwrite with correct verison
-        self.data_dict[edge[0]]["density"] = self._process_inputs(density1, n1, n2)
-        self.data_dict[edge[1]]["density"] = self._process_inputs(density2, m1, m2)
+        self.data_dict[edge[0]]["density"] = self._process_inputs(density1, n1, n2, cell_areas=self.data_dict[edge[0]].get("cell_areas", None))
+        self.data_dict[edge[1]]["density"] = self._process_inputs(density2, m1, m2, cell_areas=self.data_dict[edge[1]].get("cell_areas", None))
 
-    def _process_inputs(self, points, n, m, const=1):
+    def _process_inputs(self, points, n, m, cell_areas=None):
         """
         Processes densities or points or potentials, with default 'None' values as ones*constant. Or convert input to torch type
         """
         if points is None:
-            weights = self._torch_numpy_process(
-                const * torch.ones((n, m)).type(self.dtype) / (n * m)
-            )
+            if cell_areas is not None:
+                weights = self._torch_numpy_process(
+                        torch.ones((n, m)).type(self.dtype)
+                    )/ (n*m) / cell_areas 
+            else: weights = self._torch_numpy_process(torch.ones((n, m)).type(self.dtype))
+            # divide so that the total mass is 1 
         else:
             weights = self._clone_process(points, non_blocking=True)
             weights = weights.view(n, m)
@@ -217,6 +275,11 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
             edge0 = edge_list.pop()
             self._process_grids(edge0, grid, grid)
 
+            # share cell_areas
+            for edge in list(self.graph.edges):
+                self.data_dict[edge[0]]["cell_areas"] = self.data_dict[edge0[0]]["cell_areas"]
+                self.data_dict[edge[1]]["cell_areas"] = self.data_dict[edge0[1]]["cell_areas"]
+
             # Point to the same grid for all data
             if isinstance(grid, tuple) or len(grid.shape) == 3:
                 x1y1 = self.data_dict[edge0]["x1y1"]
@@ -243,6 +306,7 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
                 for e in list(self.graph.edges):
                     assert self.data_dict[e[0]]["grid"] is shared_grid
                     assert self.data_dict[e[1]]["grid"] is shared_grid
+
 
     def free_grid_memory(self):
         # bool switch to delete otherwise we need to keep the grid -
@@ -293,6 +357,29 @@ class BarycentreDataProcessor(TorchNumpyProcessing):
             ** 2,
         )
 
+    def process_cell_areas(self, ):
+        '''
+        data_dict should have key per node 'cell_areas' which is either a float or a vector or none, or needs to be assined.
+        if its a vector then store at the right node and check its size matches the grid size
+        also convert to torch. 
+        Check if its all unique if it is a tensor.
+
+        If none given assine 1/N where N is the number of points in the grid.
+        '''
+        # just checking that the density and shapes make
+        for node in self.graph.nodes:
+            cell_areas = self.data_dict[node].get("cell_areas", None)
+    
+            if cell_areas is None:
+                raise ValueError(f"Cell areas must be provided for node {node} in the data dict")
+            elif isinstance(cell_areas, (float, int)):
+                self.data_dict[node]['cell_areas'] = self._torch_numpy_process(cell_areas)
+            elif isinstance(cell_areas, torch.Tensor) and cell_areas.ndim == 0:
+                self.data_dict[node]['cell_areas'] = self._torch_numpy_process(cell_areas)
+            else:
+                # check it has the right shape for the density
+                assert cell_areas.shape == self.data_dict[node]['density'].shape, f"Cell areas shape {cell_areas.shape} does not match density shape {self.data_dict[node]['density'].shape} for node {node}"
+                self.data_dict[node]['cell_areas'] = self._clone_process(cell_areas)
 
 # ------------------------------------------------------------------------
 # ------------------------------------------------------------------------
