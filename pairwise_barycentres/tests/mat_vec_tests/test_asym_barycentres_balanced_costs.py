@@ -19,9 +19,9 @@ torch.set_printoptions(precision=8)
 @pytest.mark.parametrize(
     "n1, n2, members, L, grid_type",
     [
-        (8, 8, 4, 3.5, "tensor"),
-        (9, 8, 3, 3.5, "tensor"),
-        (8, 9, 2, 3.5, "tensor"),
+        (8, 8, 4, 1.0, "tensor"),
+        (9, 8, 3, 1.0, "tensor"),
+        (8, 9, 2, 1.0, "tensor"),
         (11, 11, 6, 0.9, "flat"),
         (11, 10, 7, 0.9, "flat"),
         (11, 12, 8, 0.9, "flat"),
@@ -47,16 +47,17 @@ def test_marginals_asym_bary_with_same_grid_uniform_density_without_debiasing(
         ).type(torch.DoubleTensor)
     elif grid_type == "tuple":
         X = (torch.linspace(0, L, n1), torch.linspace(0, L, n2))
-
+    
     data = []
-
+    cell_area = (L / n1) * (L / n2)
     for m in range(members):
-        data.append([None, None])  # uniform density, grid will equal everywhere
+        density = torch.ones(n1 * n2, dtype=torch.double)/ (n1*n2) / cell_area  # uniform density, normalised by cell area
+        data.append([density, None])  # uniform density, grid will equal everywhere
 
     # generate the barycentre dataprocessor class which will store all objects
     # of interest. It will also create the correct graph, and given no density of graphs
     # will create uniform densities on the grids
-    data_processor = generate_barycentredataprocessor(data, barycentre_grid=X, grid=X)
+    data_processor = generate_barycentredataprocessor(data, barycentre_grid=X, grid=X, cell_areas=cell_area)
 
     # run asymmetric sinkhorn algorithm
     data_processor, barycentre, potential_error_list, barycentre_error_list = (
@@ -77,9 +78,13 @@ def test_marginals_asym_bary_with_same_grid_uniform_density_without_debiasing(
         data_processor, epsilon=1 / np.sqrt(n1 * n2), debiasing=False
     )
 
+    for nodes in data_processor.graph.nodes():
+        print('true:', data_processor.data_dict[nodes]["density"].sum().item(), (data_processor.data_dict[nodes]["density"]*cell_area).sum().item())
+        print('marginal:', marginals[nodes]["marginal"].sum().item(), (marginals[nodes]["marginal"]*cell_area).sum().item(), marginals[nodes]["error"])
+
     for node in data_processor.graph.nodes():
-        assert marginals[node]["marginal"].sum().item() - 1.0 < 1e-5, (
-            marginals[node]["marginal"].sum().item()
+        assert marginals[node]["marginal"].sum().item()*cell_area - 1.0 < 1e-5, (
+            (marginals[nodes]["marginal"]*cell_area).sum().item()
         )  # less than tolerance
 
     for nodes in data_processor.graph.nodes():
@@ -130,9 +135,10 @@ def test_marginals_asym_bary_with_same_grid_uniform_density_with_debiasing(
         X = (torch.linspace(0, L, n1), torch.linspace(0, L, n2))
 
     data = []
-
+    cell_area = (L / n1) * (L / n2)
     for m in range(members):
-        data.append([None, None])  # uniform density, grid will equal everywhere
+        density = torch.ones(n1 * n2, dtype=torch.double)/ (n1*n2) / cell_area  # uniform density, normalised by cell area
+        data.append([density, None])  # uniform density, grid will equal everywhere
 
     # generate the barycentre dataprocessor class which will store all objects
     # of interest. It will also create the correct graph, and given no density of graphs
@@ -230,10 +236,12 @@ def test_marginals_asym_bary_with_different_grid_uniform_density_without_debiasi
         X = (torch.linspace(0, L, n1), torch.linspace(0, L, n2))
         Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
 
+    
     data = []
-
+    cell_area = (L / n1) * (L / n2)
     for m in range(members):
-        data.append([None, X])  # uniform density, grid will equal everywhere
+        density = torch.ones(n1 * n2, dtype=torch.double)/ (n1*n2) / cell_area  # uniform density, normalised by cell area
+        data.append([density, X])  # uniform density, grid will equal everywhere
 
     # generate the barycentre dataprocessor class which will store all objects
     # of interest. It will also create the correct graph, and given no density of graphs
@@ -323,9 +331,10 @@ def test_marginals_asym_bary_with_different_grid_uniform_density_with_debiasing(
         Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
 
     data = []
-
+    cell_area = (L / n1) * (L / n2)
     for m in range(members):
-        data.append([None, X])  # uniform density, grid will equal everywhere
+        density = torch.ones(n1 * n2, dtype=torch.double)/ (n1*n2) / cell_area  # uniform density, normalised by cell area
+        data.append([density, X])  # uniform density, grid will equal everywhere
 
     # generate the barycentre dataprocessor class which will store all objects
     # of interest. It will also create the correct graph, and given no density of graphs
@@ -397,28 +406,39 @@ def test_marginals_asym_bary_with_all_different_grids_with_debiasing(
 
     if grid_type == "flat":
         data = []
+        cell_areas = []
         for m in range(members):
+            N1 = n1 + np.random.randint(-members, members)
+            N2 = n2 + np.random.randint(-members, members)
             X = torch.cartesian_prod(
-                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
-                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+                torch.linspace(0, L, N1),
+                torch.linspace(0, L, N2),
             ).type(torch.DoubleTensor)
-            data.append([None, X])  # uniform density, grid will equal everywhere
-
+            cell_area = (L / N1) * (L / N2)
+            density = torch.ones(N1 * N2, dtype=torch.double)/ (N1*N2) / cell_area  # uniform density, normalised by cell area
+            data.append([density, X])  # uniform density, grid will equal everywhere
+            cell_areas.append(cell_area)
         Y = torch.cartesian_prod(
             torch.linspace(0, L, m1), torch.linspace(0, L, m2)
         ).type(torch.DoubleTensor)
     elif grid_type == "tensor":
         data = []
+        cell_areas = []
         for m in range(members):
+            N1 = n1 + np.random.randint(-members, members)
+            N2 = n2 + np.random.randint(-members, members)
             X = torch.stack(
                 torch.meshgrid(
-                    torch.linspace(0, L, n1 + np.random.randint(-members, members)),
-                    torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+                    torch.linspace(0, L, N1),
+                    torch.linspace(0, L, N2),
                     indexing="ij",
                 ),
                 dim=-1,
             ).type(torch.DoubleTensor)
-            data.append([None, X])
+            cell_area = (L / N1) * (L / N2)
+            density = torch.ones(N1 * N2, dtype=torch.double)/ (N1*N2) / cell_area  # uniform density, normalised by cell area
+            data.append([density, X])
+            cell_areas.append(cell_area)
         Y = torch.stack(
             torch.meshgrid(
                 torch.linspace(0, L, m1), torch.linspace(0, L, m2), indexing="ij"
@@ -427,18 +447,25 @@ def test_marginals_asym_bary_with_all_different_grids_with_debiasing(
         ).type(torch.DoubleTensor)
     elif grid_type == "tuple":
         data = []
+        cell_areas = []
         for m in range(members):
+            N1 = n1 + np.random.randint(-members, members)
+            N2 = n2 + np.random.randint(-members, members)
             X = (
-                torch.linspace(0, L, n1 + np.random.randint(-members, members)),
-                torch.linspace(0, L, n2 + np.random.randint(-members, members)),
+                torch.linspace(0, L, N1),
+                torch.linspace(0, L, N2),
             )
-            data.append([None, X])
+            cell_area = (L / N1) * (L / N2)
+            density = torch.ones(N1 * N2, dtype=torch.double)/ (N1*N2) / cell_area  # uniform density, normalised by cell area
+            data.append([density, X])
+            cell_areas.append(cell_area)
         Y = (torch.linspace(0, L, m1), torch.linspace(0, L, m2))
 
     # generate the barycentre dataprocessor class which will store all objects
     # of interest. It will also create the correct graph, and given no density of graphs
     # will create uniform densities on the grids
-    data_processor = generate_barycentredataprocessor(data, barycentre_grid=Y)
+    barycentre_cell_area = (L / m1) * (L / m2)
+    data_processor = generate_barycentredataprocessor(data, barycentre_grid=Y, barycentre_cell_area=barycentre_cell_area, cell_areas=cell_areas)
 
     # run asymmetric sinkhorn algorithm
     data_processor, barycentre, potential_error_list, barycentre_error_list = (

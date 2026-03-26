@@ -84,7 +84,6 @@ def test_log_reduction_update_debiasingFALSE_against_numpy(
         k=0,
         edge=(0,1),
         epsilon=epsilon,
-        debiasing=False,
     )
 
     temp1 = _log_reduction_for_sinkhorn(
@@ -92,8 +91,9 @@ def test_log_reduction_update_debiasingFALSE_against_numpy(
         k=1,
         edge=(0,1),
         epsilon=epsilon,
-        debiasing=False,
     )
+
+    leb = data_processor.data_dict[0]['cell_areas'].cpu().numpy()
 
     # NUMPY VERSION
     Fi = data_processor.data_dict[0]['f'].view(-1, 1).detach().cpu().numpy()
@@ -105,24 +105,21 @@ def test_log_reduction_update_debiasingFALSE_against_numpy(
            torch.cartesian_prod(*Y).numpy(),
            torch.cartesian_prod(*X).numpy(),
         )
-    K = np.exp((Fi.reshape(-1,1) - 0.5 * D) / epsilon.item())
-    expected = np.log(K.sum(0)/ np.prod(data_processor.data_dict[0]['f'].shape))
-
-    print("expected bary:", expected.reshape(-1)[:10])
-    print("temp1 bary:", temp1.detach().cpu().numpy().reshape(-1)[:10])
-    print("temp1 bary:", temp0.detach().cpu().numpy().reshape(-1)[:10])
+    K = np.exp((Fi.reshape(-1,1) - 0.5 * D) / epsilon.item())*leb*np.ones_like(Fi.reshape(-1,1))
+    expected = np.log(K.sum(0))
 
     assert np.allclose(expected.reshape(-1), temp0.detach().cpu().numpy().reshape(-1), rtol=1e-5, atol=1e-5)
 
     # epsilon must be positive scalar
     Fi = data_processor.data_dict[1]['f'].view(-1, 1).detach().cpu().numpy()
     # ---------- expected (NumPy) ----------
-    K = np.exp((Fi.reshape(1,-1) - 0.5 * D) / epsilon.item())
-    expected = np.log(K.sum(1)/ np.prod(data_processor.data_dict[1]['f'].shape))
+    leb = data_processor.data_dict[1]['cell_areas'].cpu().numpy()
+    K = np.exp((Fi.reshape(1,-1) - 0.5 * D) / epsilon.item())*leb*np.ones_like(Fi.reshape(1,-1))
+    expected = np.log(K.sum(1))
 
     print('passes first')
     print("expected data:", expected.reshape(-1)[:10])
-    print("mine data:", temp0.detach().cpu().numpy().reshape(-1)[:10])
+    print("mine data:", temp1.detach().cpu().numpy().reshape(-1)[:10])
 
     assert np.allclose(expected.reshape(-1), temp1.detach().cpu().numpy().reshape(-1), rtol=1e-5, atol=1e-5)
 

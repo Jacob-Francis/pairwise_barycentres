@@ -114,8 +114,9 @@ def test_class_with_same_grid_uniform_density(n1, n2, L, grid_type):
 
     for nodes in G.nodes():
         density = bcp.data_dict[nodes]["density"]
-        assert np.isclose(density.sum().item(), 1.0)
-        assert torch.isclose(density, expected_density, atol=1e-12, rtol=1e-12).all()
+        cell_areas = bcp.data_dict[nodes]["cell_areas"]
+        assert np.isclose((density * cell_areas).sum().item(), 1.0)
+        assert torch.isclose(density* cell_areas, expected_density, atol=1e-12, rtol=1e-12).all()
 
 
 @pytest.mark.parametrize(
@@ -454,8 +455,9 @@ def test_class_with_same_grid_uniform_density_disconnected(n1, n2, L, grid_type)
 
     for nodes in G.nodes():
         density = bcp.data_dict[nodes]["density"]
-        assert np.isclose(density.sum().item(), 1.0)
-        assert torch.isclose(density, expected_density, atol=1e-12, rtol=1e-12).all()
+        cell_areas = bcp.data_dict[nodes]["cell_areas"]
+        assert np.isclose((density * cell_areas).sum().item(), 1.0)
+        assert torch.isclose(density * cell_areas, expected_density, atol=1e-12, rtol=1e-12).all()
 
 
 if __name__ == "__main__":

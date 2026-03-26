@@ -82,36 +82,43 @@ def test_marginals_asym_log_bary_with_same_grid_uniform_density_without_debiasin
 
     epsilon = data_processor._torch_numpy_process(1 / np.sqrt(n1 * n2)).cpu()
         
-    K = torch.exp(-torch.cdist(X_flat, X_flat)**2 / epsilon/2) #/ np.prod(X_flat.shape[0])**2
     data = data_processor.data_dict[0]['density'].cpu().view(-1,1)
     f = data_processor.data_dict[0]['f'].cpu().clone().view(-1,1)
+    leb = data_processor.data_dict[0]['cell_areas'].cpu()*torch.ones_like(f)
+    
+    K = torch.exp(-torch.cdist(X_flat, X_flat)**2 / epsilon/2)
+
     # 2 times last term cause L \otimes L . 
-    f0 = epsilon*torch.log(data) - epsilon*torch.log(K@torch.exp(f/epsilon)) -2* epsilon* np.log(1/np.prod(data.shape))
+    f0 = epsilon*torch.log(data) - epsilon*torch.log(K@(torch.exp(f/epsilon)*leb))
     f = 0.5*(f + f0)
     
     sym_pot = symmetric_algorithm(data_processor, 0, epsilon, rho=1.0, aprox="balanced", max_iterates=1, tol=1e-9)
     sym_pot = sym_pot.cpu()
 
-    print(f.shape, sym_pot.shape)
     assert torch.allclose(f.view(-1), sym_pot.view(-1), atol=1e-5), f"Symmetric potential not close to asymmetric potential, max diff {torch.abs(f-sym_pot).max()}"
 
     # Now run till convergence
     sym_pot = symmetric_algorithm(data_processor, 0, epsilon, rho=1.0, aprox="balanced", max_iterates=1000, tol=1e-12)
-    sym_pot = sym_pot.cpu()
+    sym_pot = sym_pot.cpu().view(-1, 1)
 
     # torch check of margainls?
-    marg1 = (K * (torch.exp(sym_pot/epsilon).view(-1, 1) * torch.exp(sym_pot/epsilon).view(1, -1))).sum(dim=1) / np.prod(data.shape)**2
+    marg1 = (K * ((torch.exp(sym_pot/epsilon)).view(-1, 1) * (torch.exp(sym_pot/epsilon)*leb).view(1, -1))).sum(dim=1)
+    marg1 = marg1.view(-1, 1)
 
-    assert torch.allclose(marg1.sum(), torch.tensor(1.0, dtype=torch.double), atol=1e-6), f"Marginal sum {marg1.sum()} not close to 1"
-    assert torch.allclose(marg1.view(-1), torch.ones_like(marg1.view(-1)) * (1/(n1*n2)), atol=1e-6), f"Marginal not close to uniform, max diff {torch.abs(marg1 - (1/(n1*n2))).max()}"
+    assert torch.allclose((marg1*leb).sum(), torch.tensor(1.0, dtype=torch.double), atol=1e-6), f"Marginal sum {(marg1*leb).sum()} not close to 1"
+    assert torch.allclose((marg1*leb).view(-1), torch.ones_like(marg1.view(-1)) * (1/(n1*n2)), atol=1e-6), f"Marginal not close to uniform, max diff {torch.abs(marg1 - (1/(n1*n2))).max()}"
 
     # create torch evrsion of the cost
-    torch_cost = 2*sym_pot.sum()*1/(n1*n2)
+    torch_cost = 2*(sym_pot.view(-1)*leb.view(-1)*data.view(-1)).sum()
     
-    temp = - epsilon * ((K * (torch.exp(sym_pot/epsilon).view(-1, 1) * torch.exp(sym_pot/epsilon).view(1, -1))).sum() * (1/(n1*n2))**2 - 1)
+    temp = - epsilon * ((marg1*leb).sum() - torch.outer(leb.view(-1), leb.view(-1)).sum())
     torch_cost += temp
 
     cost = symmetric_cost(data_processor, 0, data_processor._torch_numpy_process(1 / np.sqrt(n1 * n2)), rho=1.0, aprox="balanced", max_iterates=1000, tol=1e-12)
-    print(cost, torch_cost)
+
     assert torch.allclose(cost, torch_cost, atol=1e-3)
 
+if __name__ == "__main__":
+    import sys
+
+    pytest.main(sys.argv)
