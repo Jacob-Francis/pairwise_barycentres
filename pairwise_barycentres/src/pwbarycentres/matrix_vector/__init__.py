@@ -4,4 +4,4 @@ from .asymmetric_sinkhorn_algorithm import (
     balanced_barycentre_updates,
     debiasing_dual_potential_update
 )
-from .asymmetric_cost import asymmetric_cost as asymmetric_matvec_cost
+from .asymmetric_cost_mat import asymmetric_cost_mat_vec as asymmetric_matvec_cost

@@ -10,7 +10,7 @@ from ..common.symmetric_problem import symmetric_cost
 import torch
 from ..common.utils import _dual_cost_data_term, _dual_cost_data_term_f_potential
 
-def asymmetric_cost(
+def asymmetric_cost_mat_vec(
     dp: SinkhornDataProcessor,
     epsilon,
     rho,
@@ -18,7 +18,8 @@ def asymmetric_cost(
     debiasing: bool = True,
     verbose: bool = False,
     fixed_barycentre=None,
-    return_breakdown=False
+    return_breakdown=False,
+    zero_tol=1e-40
 ):
 
     epsilon = dp._torch_numpy_process(epsilon).view(-1, 1)
@@ -44,7 +45,7 @@ def asymmetric_cost(
             d = dp.data_dict[edge[0]]["debiased_potential"]
             # calcualte <d-1 K (d-1)>
             debiasing_term = _calculate_debiasing_potential_symmetric_term(
-                d, dp, edge[0], epsilon, leb=False
+                d, dp, edge[0], epsilon, dp.data_dict[edge[0]]["cell_areas"], leb=False
             )
         else:
             # calcualte UOT_(e,e)

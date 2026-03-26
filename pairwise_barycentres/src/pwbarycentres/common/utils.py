@@ -234,7 +234,9 @@ def generate_barycentredataprocessor(
     weights=None, 
     cuda_device=None, 
     potentials="a",
-    force_pykeops=False
+    force_pykeops=False,
+    cell_areas=None,
+    barycentre_cell_area=None
 ):
     """ # Data should be arranged as a list of lists
         # i.e. data[i] = [density, grid]
@@ -248,6 +250,14 @@ def generate_barycentredataprocessor(
     counter = 0
     data_dict = {}
 
+    if cell_areas is not None:
+        if isinstance(cell_areas, (float, int)):
+            cell_areas = [cell_areas for _ in range(M)]
+        elif isinstance(cell_areas, torch.Tensor) and cell_areas.ndim == 0:
+            cell_areas = [cell_areas.item() for _ in range(M)]
+        else:
+            assert len(cell_areas) == M, "If cell_areas is a list or tensor, it should have the same length as data"
+    
     if force_pykeops:
         if (grid is not None) and isinstance(grid, tuple):
             grid = torch.cartesian_prod(*grid)
@@ -261,23 +271,27 @@ def generate_barycentredataprocessor(
         data_dict[counter] = {
             "density": None,  # this is the bayrcentre which will have a uniform density to start
             "grid": barycentre_grid,
+            "cell_areas": barycentre_cell_area[i] if barycentre_cell_area is not None else None
         }
         if grid is not None:
             data_dict[counter + 1] = {
                 "density": data[i][0] if not force_pykeops else data[i][0].reshape(-1),
                 "grid": grid if grid is not None else data[i][1],
+                "cell_areas": cell_areas[i] if cell_areas is not None else None
             }
         else:
             if force_pykeops:
                 tempgrid = torch.cartesian_prod(*[torch.tensor(d) for d in data[i][1]])
                 data_dict[counter + 1] = {
                     "density": data[i][0] if not force_pykeops else data[i][0].reshape(-1),
-                    "grid": tempgrid
+                    "grid": tempgrid,
+                    "cell_areas": cell_areas[i] if cell_areas is not None else None
                 }
             else:
                 data_dict[counter + 1] = {
                     "density": data[i][0],
                     "grid": data[i][1],
+                    "cell_areas": cell_areas[i] if cell_areas is not None else None
                 }
         counter += 2
     graph = graph_creator_from_edges_and_weights(edges, weights)
@@ -414,7 +428,7 @@ def _dual_cost_data_term(a, data, aprox, epsilon, rho):
     else:
         raise NotImplementedError("Only kl and balanced aprox implemented")
 
-def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho, zero_tol=1e-40):
+def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho, cell_areas, zero_tol=1e-40):
     '''
     Handles the double negative inside here! Don't add another
     '''
@@ -422,16 +436,17 @@ def _dual_cost_data_term_f_potential(f, data, aprox, epsilon, rho, zero_tol=1e-4
     assert f.shape == data.shape, "Shapes of f and data should match"
     
     if aprox == "kl":
-        return torch.where(data >= zero_tol, -rho * (torch.exp(-f / rho) - 1) * data, torch.zeros_like(data)).sum()
+        temp = torch.where(data >= zero_tol, -rho * (torch.exp(-f / rho) - 1) * data * cell_areas, torch.zeros_like(data)).sum()
     elif aprox == "balanced":
-        return torch.sum(torch.where(data >= zero_tol, f * data, torch.zeros_like(data)))
+        temp = torch.sum(torch.where(data >= zero_tol, f * data * cell_areas, torch.zeros_like(data)))
     elif aprox == "tv":
         assert (f <= rho).all(), "a should be less than rho for tv aprox"
         assert (f >= -rho).all(), "a should be greater than -rho for tv aprox"
-        return -torch.sum(torch.where(data >= zero_tol, (torch.maximum(-f, -rho)) * data, torch.zeros_like(data)))
+        temp = -torch.sum(torch.where(data >= zero_tol, (torch.maximum(-f, -rho)) * data * cell_areas, torch.zeros_like(data)))
     else:
         raise NotImplementedError("Only kl, tv and balanced aprox implemented")
 
+    return temp
 
 def _flat_grid_log_sinkhorn_reduction(f, d, ind, X, Y, epsilon):
     """

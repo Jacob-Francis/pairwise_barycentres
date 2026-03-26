@@ -27,7 +27,7 @@ def symmetric_cost(dp, k, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
     sym_pot = symmetric_algorithm(dp, k, epsilon, rho, aprox, max_iterates, tol)
 
     # term1 (2 because its the same potential)
-    term1 = 2*_dual_cost_data_term_f_potential(sym_pot, dp.data_dict[k]['density'], aprox, epsilon, rho)
+    term1 = 2*_dual_cost_data_term_f_potential(sym_pot, dp.data_dict[k]['density'], aprox, epsilon, rho, dp.data_dict[k]['cell_areas'])
 
     # need to change below 
 
@@ -35,7 +35,11 @@ def symmetric_cost(dp, k, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
     assert 'grid' in dp.data_dict[k], "You may have cleared grids incorrectly"
     grid = dp.data_dict[k]['grid']
     tensoirse = False
+    cell_areas = dp.data_dict[k]['cell_areas']
 
+    if cell_areas.ndim > 0:
+        assert cell_areas.shape == sym_pot.shape, "Cell areas should be the same shape as the potential for the symmetric problem"
+    
     # can we tensorise
     if isinstance(grid, tuple):
         gridding = dp._cost_for_tuple(grid, grid)
@@ -53,34 +57,26 @@ def symmetric_cost(dp, k, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
         pi_sum = _tensorised_marginal_reduction(
             *gridding,
             epsilon,
-            torch.exp(sym_pot/epsilon),
-            torch.exp(sym_pot/epsilon),
+            torch.exp(sym_pot/epsilon)*cell_areas,
+            torch.exp(sym_pot/epsilon)*cell_areas,
         ).sum()
  
-        cost_const = 1
-        # _tensorised_marginal_reduction(
-        #     *gridding,
-        #     epsilon,
-        #     torch.ones_like(sym_pot),
-        #     torch.ones_like(sym_pot),
-        # ).sum()
     else:
         # pykeops
         pi_sum = _flat_grid_marginal_reduction(
-            grid, grid,
+            grid, 
+            grid,
             epsilon,
-            torch.exp(sym_pot/epsilon),
-            torch.exp(sym_pot/epsilon),
+            torch.exp(sym_pot/epsilon)*cell_areas,
+            torch.exp(sym_pot/epsilon)*cell_areas,
         ).sum()
-        cost_const = 1
-        #  _flat_grid_marginal_reduction(
-        #     grid, grid,
-        #     epsilon,
-        #     torch.ones_like(sym_pot),
-        #     torch.ones_like(sym_pot),
-        # ).sum()
 
-    return term1  - epsilon*(pi_sum/(np.prod(dp.data_dict[k]["density"].shape)**2) - cost_const)
+    if cell_areas.ndim == 0:
+        cost_const = np.prod(sym_pot.shape)**2*cell_areas.item()**2
+    else:
+        cost_const = cell_areas.sum()**2
+
+    return term1  - epsilon*(pi_sum - cost_const)
 
 
 def symmetric_algorithm(dp, k, epsilon, rho, aprox, max_iterates=2000, tol=1e-9):
@@ -97,54 +93,54 @@ def symmetric_algorithm(dp, k, epsilon, rho, aprox, max_iterates=2000, tol=1e-9)
     return sym_pot
 
 
-def symmetric_mat_vec_chizat_method(dp, k, epsilon, rho, aprox):
-    '''
-    k is the node which contains data mu_k, and then solving UOT^{phi, phi}(mu_k, mu_kl)
-    '''
-    assert 'grid' in dp.data_dict[k], "You may have cleared grids incorrectly"
-    grid = dp.data_dict[k]['grid']
+# def symmetric_mat_vec_chizat_method(dp, k, epsilon, rho, aprox):
+#     '''
+#     k is the node which contains data mu_k, and then solving UOT^{phi, phi}(mu_k, mu_kl)
+#     '''
+#     assert 'grid' in dp.data_dict[k], "You may have cleared grids incorrectly"
+#     grid = dp.data_dict[k]['grid']
 
-    tensoirse = False
+#     tensoirse = False
 
-    # can we tensorise
-    if isinstance(grid, tuple):
-        gridding = dp._cost_for_tuple(grid, grid)
-        tensoirse = True
+#     # can we tensorise
+#     if isinstance(grid, tuple):
+#         gridding = dp._cost_for_tuple(grid, grid)
+#         tensoirse = True
         
-    elif len(grid.shape) == 3:
-        n1, n2, n3 = grid.shape
+#     elif len(grid.shape) == 3:
+#         n1, n2, n3 = grid.shape
 
-        gridding = (
-                dp._cost_for_meshgrid(grid, grid, n1, n2, n1, n2)
-            )
-        tensoirse = True
+#         gridding = (
+#                 dp._cost_for_meshgrid(grid, grid, n1, n2, n1, n2)
+#             )
+#         tensoirse = True
 
-    if tensoirse:
-        lse = lambda a_g: _tensorised_sinkhorn_reduction(
-                a_g,
-                *gridding,
-                epsilon
-            )
-    else:
-        # pykeops
-        lse = lambda a_g: _flat_grid_sinkhorn_reduction(
-            a_g,
-            grid, 
-            grid,
-            epsilon
-        )
+#     if tensoirse:
+#         lse = lambda a_g: _tensorised_sinkhorn_reduction(
+#                 a_g,
+#                 *gridding,
+#                 epsilon
+#             )
+#     else:
+#         # pykeops
+#         lse = lambda a_g: _flat_grid_sinkhorn_reduction(
+#             a_g,
+#             grid, 
+#             grid,
+#             epsilon
+#         )
 
-    # aprox
-    def one_chizat_update(sym_pot):
-        return chizat_proxdiv_step(
-        lse(sym_pot),
-        epsilon,
-        rho,
-        dp.data_dict[k]["density"],
-        aprox=aprox,
-    ) / (np.prod(dp.data_dict[k]["density"].shape)**2)
+#     # aprox
+#     def one_chizat_update(sym_pot):
+#         return chizat_proxdiv_step(
+#         lse(sym_pot),
+#         epsilon,
+#         rho,
+#         dp.data_dict[k]["density"],
+#         aprox=aprox,
+#     ) / (np.prod(dp.data_dict[k]["density"].shape)**2)
     
-    return one_chizat_update
+#     return one_chizat_update
 
 def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, zero_tol=1e-40):
     '''
@@ -152,6 +148,11 @@ def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, zero_tol=1e-40)
     '''
     assert 'grid' in dp.data_dict[k], "You may have cleared grids incorrectly"
     grid = dp.data_dict[k]['grid']
+    assert torch.is_tensor(dp.data_dict[k]['cell_areas'])
+    if dp.data_dict[k]['cell_areas'].ndim == 0:
+        leb = dp.data_dict[k]['cell_areas']*torch.ones_like(dp.data_dict[k]["f"])
+    else:
+        leb = dp.data_dict[k]['cell_areas'] 
 
     tensoirse = False
 
@@ -171,7 +172,7 @@ def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, zero_tol=1e-40)
     if tensoirse:
         lse = lambda a_g : _tensorised_log_sinkhorn_reduction(
                 a_g,
-                torch.ones_like(a_g),
+                leb,
                 0,
                 *gridding,
                 epsilon
@@ -180,7 +181,7 @@ def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, zero_tol=1e-40)
     else:
         lse = lambda a_g : _flat_grid_log_sinkhorn_reduction(
             a_g,
-            torch.ones_like(a_g),
+            leb,
             0,
             grid,
             grid, 
@@ -191,7 +192,6 @@ def symmetric_mat_f_potential_method(dp, k, epsilon, rho, aprox, zero_tol=1e-40)
     def one_chizat_update(sym_pot):
         data = dp.data_dict[k]["density"]
         s = epsilon*lse(sym_pot)        
-        s += 2*epsilon* np.log(1/np.prod(data.shape)) # 2 because its sqaured and the same data
 
         data = torch.clamp(data, min=zero_tol) # to avoid log of zero
         temp = epsilon * torch.log(data) - s

@@ -27,7 +27,7 @@ def chizat_reduction(Xi, Yj, epsilon, ai):
         Xi,
         Yj,
         epsilon.view(-1,1),
-        ai,
+        ai.view(-1,1),
     )
 
 
@@ -74,11 +74,11 @@ def log_reduction_ii(Fi, Xi, Yj, epsilon, ai):
     """
 
     temp =  _pykeops_log_reduction_ii(
-        Fi,
+        Fi.view(-1,1),
         Xi,
         Yj,
         epsilon.view(-1,1),
-        ai,
+        ai.view(-1,1),
     )
 
     temp = temp[:, 0] + torch.log(temp[:, 1])
@@ -110,11 +110,11 @@ def log_reduction_ij(Fi, Xi, Yj, epsilon, aj):
     """
 
     temp =  _pykeops_log_reduction_ij(
-        Fi,
+        Fi.view(-1,1),
         Xi,
         Yj,
         epsilon.view(-1,1),
-        aj,
+        aj.view(-1,1),
     )
 
     temp = temp[:, 0] + torch.log(temp[:, 1])
@@ -147,8 +147,8 @@ def chizat_marginals(Xi, Yj, epsilon, ai, bj):
         Xi,
         Yj,
         epsilon.view(-1,1),
-        ai,
-        bj,
+        ai.view(-1,1),
+        bj.view(-1,1),
     )
 
 
@@ -196,12 +196,12 @@ def fg_reduction_ii(Fi, Gj, Xi, Yj, epsilon, ai):
         ai = torch.ones_like(Fi)
 
     temp =  _pykeops_fg_reduction_ii(
-        Fi,
-        Gj,
+        Fi.view(-1,1),
+        Gj.view(-1,1),
         Xi,
         Yj,
         epsilon.view(-1,1),
-        ai,
+        ai.view(-1,1),
     )
 
     temp = torch.exp(temp[:, 0])*temp[:, 1]
@@ -222,12 +222,12 @@ def fg_reduction_ij(Fi, Gj, Xi, Yj, epsilon, aj):
         aj = torch.ones_like(Gj)
 
     temp =  _pykeops_fg_reduction_ij(
-        Fi,
-        Gj,
+        Fi.view(-1,1),
+        Gj.view(-1,1),
         Xi,
         Yj,
         epsilon.view(-1,1),
-        aj,
+        aj.view(-1,1),
     )
 
     temp = torch.exp(temp[:, 0])*temp[:, 1]
@@ -242,14 +242,16 @@ _pykeops_c_pi_term = Genred(
     f"X = Vi(2)", 
     f"Y = Vj(2)",  
     "E = Pm(1)",
+    "A = Vi(1)",
+    "B= Vj(1)",
     ],
     reduction_op="Max_SumShiftExpWeight",
     axis=0,
-    formula2="IntInv(2)*SqDist(X, Y)",
+    formula2="A*B*IntInv(2)*SqDist(X, Y)",
 )
 
 
-def c_pi_term(Fi, Gj, Xi, Yj, epsilon):
+def c_pi_term(Fi, Gj, Xi, Yj, epsilon, Ai, Bj):
     """
     "f = Vj(1)",  # Geo: 1 scalar per line
     "F = Vi(1)",  # Geo: 1 scalar per line
@@ -259,12 +261,62 @@ def c_pi_term(Fi, Gj, Xi, Yj, epsilon):
 
 
     """
+
     temp =  _pykeops_c_pi_term(
-        Fi,
-        Gj,
+        Fi.view(-1,1),
+        Gj.view(-1,1),
         Xi,
         Yj,
         epsilon.view(-1,1),
+        Ai.view(-1,1),
+        Bj.view(-1,1)
+    )
+
+    temp = torch.exp(temp[:, 0])*temp[:, 1]
+
+    # numpy version would be (ai.view(-1,1)*bj.view(1,-1)*torch.cdist(Xi, Yj)**2/2).sum()
+    # test = (Ai.view(-1, 1)*Bj.view(1, -1)*torch.cdist(Xi, Yj)**2/2*torch.exp((Fi.view(-1, 1) + Gj.view(1, -1) - torch.cdist(Xi, Yj)**2/2) / epsilon)).sum()
+
+    # print(f"c_pi_term: {temp.sum().item()}, test: {test.item()}")
+    # assert torch.isclose(temp.sum(), test, rtol=1e-5, atol=1e-5), f"c_pi_term: {temp.sum().item()}, test: {test.item()}"
+    return temp.sum()
+
+
+# (f+g-c)/eps * pi
+_pykeops_log_pi_term = Genred(
+    f"((F + G - IntInv(2)*SqDist(X, Y))/E)",
+    ["F = Vi(1)", 
+     "G = Vj(1)", 
+    f"X = Vi(2)", 
+    f"Y = Vj(2)",  
+    "E = Pm(1)",
+    "A = Vi(1)",
+    "B= Vj(1)",
+    ],
+    reduction_op="Max_SumShiftExpWeight",
+    axis=0,
+    formula2="A*B*(F+G - IntInv(2)*SqDist(X, Y))/E",
+)
+
+
+def log_pi_term(Fi, Gj, Xi, Yj, epsilon, Ai, Bj):
+    """
+    "f = Vj(1)",  # Geo: 1 scalar per line
+    "F = Vi(1)",  # Geo: 1 scalar per line
+    f"X = Vi(2)",  # Geo: 2-dim
+    f"Y = Vj(2)",  # Uni: 1 scalar per line
+    "E = Pm(1)",  # parameter: 1 scalar per line
+
+
+    """
+    temp =  _pykeops_log_pi_term(
+        Fi.view(-1,1),
+        Gj.view(-1,1),
+        Xi,
+        Yj,
+        epsilon.view(-1,1),
+        Ai.view(-1,1),
+        Bj.view(-1,1)
     )
 
     temp = torch.exp(temp[:, 0])*temp[:, 1]

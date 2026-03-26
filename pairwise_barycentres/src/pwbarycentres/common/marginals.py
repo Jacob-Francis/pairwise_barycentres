@@ -55,7 +55,7 @@ def calculate_node_marginal(dp: SinkhornDataProcessor, node, epsilon, debiasing)
         )
 
         if 'f' in dp.data_dict[node] and 'f' in dp.data_dict[neighbour]:
-            marginal = fg_potential_marginal_reduction(dp, node, epsilon, False, neighbour, edge)
+            marginal = fg_potential_marginal_reduction(dp, node, epsilon, neighbour, edge)
         elif 'a' in dp.data_dict[node] and 'a' in dp.data_dict[neighbour]:
             marginal = ab_potential_marginal_reduction(dp, node, epsilon, debiasing, neighbour, edge)
           # we never acttch the potential anymore
@@ -64,8 +64,10 @@ def calculate_node_marginal(dp: SinkhornDataProcessor, node, epsilon, debiasing)
                 "Node potentials not found or do not match between nodes"
             )
 
+    # mat vec version and log are inconsistent ; going with log
     error = torch.norm(marginal - node_data["density"], p=float("inf")).item()
 
+    # print(f"marginal error for node {node}: {error}, sum of marginal: {marginal.sum().item()}, sum of density*cell_areas: {(node_data['density']*node_data['cell_areas']).sum().item()}")
     return marginal, error
 
 def ab_potential_marginal_reduction(dp, node, epsilon, debiasing, neighbour, edge):
@@ -117,72 +119,53 @@ def ab_potential_marginal_reduction(dp, node, epsilon, debiasing, neighbour, edg
     return marginal
 
 
-def fg_potential_marginal_reduction(dp, node, epsilon, debiasing, neighbour, edge):
-    if debiasing:
-        if "debiased_potential" in dp.data_dict[node]:
-            g = dp.data_dict[node]["f"] 
-            f = dp.data_dict[neighbour]["f"]
-            d = dp.data_dict[node]["debiased_potential"]
-            ind = 0 # d on node
-        elif "debiased_potential" in dp.data_dict[neighbour]:
-            g = dp.data_dict[node]["f"]
-            f = dp.data_dict[neighbour]["f"]
-            d = dp.data_dict[neighbour]["debiased_potential"]
-            ind = 1 # d on neighbour
-        else:
-            raise Warning(
-                    "No debiasing potentials attached to either node, yet using debiasing"
-                )
+def fg_potential_marginal_reduction(dp, node, epsilon, neighbour, edge):
 
-        if (
-                "debiased_potential" in dp.data_dict[node]
-                and "debiased_potential" in dp.data_dict[neighbour]
-            ):
-            raise Warning(
-                    "Both nodes have debiasing potentials attached, this is unexpected behaviour"
-                )
+    f = dp.data_dict[neighbour]["f"]
+    g = dp.data_dict[node]["f"]
+
+    assert torch.is_tensor(dp.data_dict[neighbour]['cell_areas'])
+    if dp.data_dict[neighbour]['cell_areas'].ndim == 0:
+        leb_f = dp.data_dict[neighbour]['cell_areas']*torch.ones_like(dp.data_dict[neighbour]["f"])
     else:
-        f = dp.data_dict[neighbour]["f"]
-        g = dp.data_dict[node]["f"]
-        d = None
+        leb_f = dp.data_dict[neighbour]['cell_areas']
+
+    assert torch.is_tensor(dp.data_dict[node]['cell_areas'])
+    if dp.data_dict[node]['cell_areas'].ndim == 0:
+        leb_g = dp.data_dict[node]['cell_areas']*torch.ones_like(dp.data_dict[node]["f"])
+    else:
+        leb_g = dp.data_dict[node]['cell_areas']
+
+
+    if leb_f.ndim >0 :
+        assert f.shape == leb_f.shape
+    if leb_g.ndim >0 :
+        assert g.shape == leb_g.shape
 
     if "x1y1" in dp.data_dict[edge] and "x2y2" in dp.data_dict[edge]:
-            # we can tensorise
-        if d is None:
-            ind = 2 # don't multiply either.
     
         marginal = _tensorised_marginal_reduction(
                 dp.data_dict[edge]["x1y1"],  # either order tensorise_f will sort it
                 dp.data_dict[edge]["x2y2"],
                 epsilon,
-                torch.exp(f/epsilon)*d if ind==1 else torch.exp(f/epsilon),
-                torch.exp(g/epsilon)*d if ind==0 else torch.exp(g/epsilon),
+                torch.exp(f/epsilon)*leb_f,
+                torch.exp(g/epsilon),
             )
     elif "grid" in dp.data_dict[node] and "grid" in dp.data_dict[neighbour]:
         # we can use PyKeOps
-        if d is None:
-            ind = 1 # doesn't matter since ii and ij differ by d summation
-    
-        if ind==1:
-            marginal = fg_reduction_ii(
-                Fi=f,
-                Gj=g,
-                Xi=dp.data_dict[neighbour]["grid"],
-                Yj=dp.data_dict[node]["grid"],
-                epsilon=epsilon.view(-1,1),
-                ai=d,
-            )
-        elif ind==0:
-            marginal = fg_reduction_ij(
-                Fi=f,
-                Gj=g,
-                Xi=dp.data_dict[neighbour]["grid"],
-                Yj=dp.data_dict[node]["grid"],
-                epsilon=epsilon.view(-1,1),
-                aj=d,
-            )
-        
-    return marginal / (np.prod(f.shape)*np.prod(g.shape))
+        marginal = fg_reduction_ii(
+            Fi=f,
+            Gj=g,
+            Xi=dp.data_dict[neighbour]["grid"],
+            Yj=dp.data_dict[node]["grid"],
+            epsilon=epsilon.view(-1,1),
+            ai=leb_f,
+        )
+        marginal = marginal
+
+    assert marginal.shape == leb_g.shape
+
+    return marginal
 
 
 # If debiasing we can 'attach' the debiasing potential to the marginal reduction
@@ -209,11 +192,15 @@ def _flat_grid_marginal_reduction(X, Y, epsilon, ai, bj):
 
 
 
-def _calculate_debiasing_potential_symmetric_term(d, dp, node, epsilon, leb=True):
+def _calculate_debiasing_potential_symmetric_term(d, dp, node, epsilon, cell_areas, leb=True):
     """
     we can hack the marginal reductions for find the cost constant summation <K>
     by using ones vectors for ai and bj
     """
+
+    if cell_areas.ndim >0:
+        assert cell_areas.shape == d.shape
+    
 
     if "x1x1" in dp.data_dict[node] and "x2x2" in dp.data_dict[node]:
         # we can tensorise
@@ -221,8 +208,8 @@ def _calculate_debiasing_potential_symmetric_term(d, dp, node, epsilon, leb=True
             dp.data_dict[node]["x1x1"],  # either order tensorise_f will sort it
             dp.data_dict[node]["x2x2"],
             epsilon,
-            d if leb else d - 1, # look here!
-            d if leb else d - 1,
+            d*cell_areas if leb else (d - 1)*cell_areas, # look here!
+            d*cell_areas if leb else (d - 1)*cell_areas,
         )
     elif "grid" in dp.data_dict[node]:
         # we can use PyKeOps
@@ -230,11 +217,11 @@ def _calculate_debiasing_potential_symmetric_term(d, dp, node, epsilon, leb=True
             dp.data_dict[node]["grid"],
             dp.data_dict[node]["grid"],
             epsilon,
-            d.view(-1,1) if leb else d.view(-1,1) - 1,
-            d.view(-1,1) if leb else d.view(-1,1) - 1,
+            d.view(-1,1)*cell_areas if leb else (d.view(-1,1) - 1)*cell_areas,
+            d.view(-1,1)*cell_areas if leb else (d.view(-1,1) - 1)*cell_areas,
         )
 
     if leb:
-        return cost_constant.sum() / (np.prod(d.shape)**2)
+        return cost_constant.sum() 
     else:
         return cost_constant.sum()
