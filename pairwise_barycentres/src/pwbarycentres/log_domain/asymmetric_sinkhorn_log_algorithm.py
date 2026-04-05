@@ -32,7 +32,8 @@ def asymmetric_sinkhorn_log_algorithm(
     lags=None,
     energy_tracking=False,
     fixed_barycentre=None,
-    zero_tol=1e-40
+    zero_tol=1e-40,
+    bary_flow=False
 ):
     # shorten to pass around
     dp = data_processor
@@ -102,6 +103,9 @@ def asymmetric_sinkhorn_log_algorithm(
     potential_error_list = []
     barycentre_error_list = []
 
+    if bary_flow:
+        bary_list = [barycentre.clone()]
+
     while count_iterates < max_iterates and err > tol:
         # reset errors
         err_potentials = -np.inf
@@ -138,6 +142,9 @@ def asymmetric_sinkhorn_log_algorithm(
             # update the barycentre in the dictionary
             for edge in dp.graph.edges:
                 dp.data_dict[edge[0]]["density"] = barycentre
+            
+            if bary_flow:
+                bary_list.append(barycentre.clone())
             
         else:
             # need another error term to check convergence
@@ -256,14 +263,32 @@ def asymmetric_sinkhorn_log_algorithm(
                 dp.data_dict[edges[0]]["debiased_potential"] is d
             ), "Debiasing potential should be the same object"
 
-    if measure_constraints and not energy_tracking:
-        return data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict
-    elif energy_tracking and not measure_constraints:
-        return data_processor, barycentre, potential_error_list, barycentre_error_list, energy_dict
-    elif energy_tracking and measure_constraints:
-        return data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict, energy_dict
-    else:
-        return data_processor, barycentre, potential_error_list, barycentre_error_list
+    result = [
+        data_processor,
+        barycentre,
+        potential_error_list,
+        barycentre_error_list
+    ]
+
+    if measure_constraints:
+        result.append(constraints_dict)
+    if energy_tracking:
+        result.append(energy_dict)
+    if bary_flow:
+        result.append(bary_list)
+
+    return tuple(result)
+    # if bary_flow:
+    #     return data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict if measure_constraints else None, energy_dict if energy_tracking else None, bary_list
+    
+    # if measure_constraints and not energy_tracking:
+    #     return data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict
+    # elif energy_tracking and not measure_constraints:
+    #     return data_processor, barycentre, potential_error_list, barycentre_error_list, energy_dict
+    # elif energy_tracking and measure_constraints:
+    #     return data_processor, barycentre, potential_error_list, barycentre_error_list, constraints_dict, energy_dict
+    # else:
+    #     return data_processor, barycentre, potential_error_list, barycentre_error_list
 
 
 def _log_reduction_for_sinkhorn(dp, k, edge, epsilon):
@@ -518,31 +543,37 @@ def sum_bary_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasin
     for e1, e2, w in dp.graph.edges(data=True):
         # there will be many large values from where the density is close to zero
         # what do i do with these...
-        sum_bary += torch.where(
-            dp.data_dict[e1]["density"] >= zero_tol,  
-            dp.data_dict[e1]["f"] * w["weight"], 
-            torch.zeros_like(barycentre)) 
+        sum_bary += dp.data_dict[e1]["f"] * w["weight"]
         # sum_bary += dp.data_dict[e1]["f"] * w["weight"]
     if debiasing:
+        assert d.shape == sum_bary.shape, "d and sum_bary should have the same shape"
         dtemp = torch.clamp(d, min=zero_tol) # to avoid log of zero
         sum_bary -=  epsilon *torch.log(dtemp)
+
+    leb = dp.data_dict[e1]['cell_areas']
+    sum_bary *= leb
 
     return sum_bary.mean().item()
 
 def sum_f_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-40):
      # f (potenital on barycentre) constraint: balanced constraint avergage over leaf nodes
     sum_f = 0
+
     for e1, e2, w in dp.graph.edges(data=True):
         marginal = calculate_node_marginal(dp, e1, epsilon, debiasing=False)[0]
-        sum_f += (barycentre - marginal)* w["weight"]
+        leb = dp.data_dict[e1]['cell_areas']
+        sum_f += (barycentre - marginal)*leb* w["weight"]
     
     return sum_f.mean().item()
 
 def sum_d_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, zero_tol=1e-40):
     # debiasing dual potential constraint: 
     if debiasing:
+        leb = dp.data_dict[0]['cell_areas']  # first node is a barycenter node
         s = debiasing_dual_potential_update(dp, d, barycentre, epsilon, return_s=True)
-        sum_d = - barycentre / (d + zero_tol) + s
+        dtemp = torch.clamp(d, min=zero_tol)
+        sum_d = (-barycentre / (dtemp) + s)*epsilon*leb
+        assert sum_d.shape == barycentre.shape
     else:
         sum_d = torch.zeros_like(barycentre)
     return sum_d.mean().item()
@@ -557,18 +588,21 @@ def sum_g_measure_constraint(dp, barycentre, epsilon, rho, aprox, d, debiasing, 
     if aprox == "balanced":
         for e1, e2, w in dp.graph.edges(data=True):
             marginal = calculate_node_marginal(dp, e2, epsilon, debiasing=False)[0]
-            sum_g.append(((dp.data_dict[e2]["density"] - marginal) * w["weight"]).sum().item())
+            leb = dp.data_dict[e2]['cell_areas']
+            sum_g.append((leb*(dp.data_dict[e2]["density"] - marginal) * w["weight"]).sum().item())
             # sum_g.append((torch.where(dp.data_dict[e2]["density"] > zero_tol, dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
     if aprox == 'kl':
         for e1, e2, w in dp.graph.edges(data=True):
             marginal = calculate_node_marginal(dp, e2, epsilon, debiasing)[0]
-            sum_g.append(((torch.exp(-dp.data_dict[e2]["f"]/rho)*dp.data_dict[e2]["density"] - marginal) * w["weight"]).sum().item())
+            leb = dp.data_dict[e2]['cell_areas']
+            sum_g.append((leb*((torch.exp(-dp.data_dict[e2]["f"]/rho)*dp.data_dict[e2]["density"] - marginal)) * w["weight"]).sum().item())
             # sum_g.append((torch.where(dp.data_dict[e2]["density"] > zero_tol, torch.exp(-dp.data_dict[e2]["f"]/rho)*dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
     if aprox == 'tv':
         for e1, e2, w in dp.graph.edges(data=True):
             assert  (dp.data_dict[e2]["f"] <= rho).all(), "f should be clamped to +- rho in TV aproximation"
             marginal = calculate_node_marginal(dp, e2, epsilon, debiasing)[0]
-            sum_g.append(((dp.data_dict[e2]["density"] - marginal) * w["weight"]).sum().item())
+            leb = dp.data_dict[e2]['cell_areas']
+            sum_g.append((leb*((dp.data_dict[e2]["density"] - marginal)) * w["weight"]).sum().item())
             # sum_g.append((torch.where(dp.data_dict[e2]["density"] > zero_tol, dp.data_dict[e2]["density"] - marginal, torch.zeros_like(marginal)) * w["weight"]).sum().item())
 
     return np.mean(sum_g)

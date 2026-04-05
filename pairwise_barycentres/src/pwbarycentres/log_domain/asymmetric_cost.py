@@ -23,7 +23,8 @@ def asymmetric_cost(
     return_breakdown=False,
     ignore_const=False,
     primal_cost=False,
-    zero_tol=1e-40
+    zero_tol=1e-40,
+    sym_tol=1e-9,
 ):
 
     epsilon = dp._torch_numpy_process(epsilon).view(-1, 1)
@@ -56,7 +57,7 @@ def asymmetric_cost(
         
         # solve UOT(mu_I, mu_I)
         if debiasing and not ignore_const:
-            cost = symmetric_cost(dp, edge[1], epsilon, rho, aprox, max_iterates=2000, tol=1e-9)
+            cost = symmetric_cost(dp, edge[1], epsilon, rho, aprox, max_iterates=2000, tol=sym_tol)
             uot_mu_mu.append(cost.item() * weighting.item())
         else:
             uot_mu_mu.append(0)
@@ -120,7 +121,7 @@ def asymmetric_cost(
         print('primal cost', sum(primal_costs))
     
     if return_breakdown:
-        cost_dict= dict(
+        full_cost_dict= dict(
             total_cost=full_cost,
             unbalanced_sinkhorn_terms=us_e,
             uot_mu_mu_terms=uot_mu_mu if debiasing else None,
@@ -131,7 +132,7 @@ def asymmetric_cost(
             debiasing=debiasing,
             subbreakdown=cost_dict
         )
-        return full_cost, us_e, cost_dict
+        return full_cost, us_e, full_cost_dict
     else:
         return full_cost, us_e
     
@@ -206,7 +207,7 @@ def _asymmetric_individual_edge_primal_cost(dp, edge, epsilon, rho, aprox, retur
 
     assert torch.allclose(bary_marginal.sum(), data_marginal.sum()), "Marginals should have the same total mass, but got {} and {}".format(bary_marginal.sum().item(), data_marginal.sum().item())
 
-    assert torch.allclose(bary_marginal, dp.data_dict[bary_node]["density"]), "Marginals should have the same total mass"
+    assert torch.allclose(bary_marginal, dp.data_dict[bary_node]["density"]), "Marginals should be the same {}".format((bary_marginal - dp.data_dict[bary_node]["density"]).norm().item())
     # This term has to be eqaual otherwise the cost is infinite, so we can ignore it in the cost calculation
 
     if aprox == "balanced": # it depend which update was last if it can exactly match or not, so we use a tolerance
